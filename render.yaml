@@ -1,0 +1,20 @@
+# Static site for Anonymouse.
+# Render serves real files in dist first, then this rewrite sends
+# client routes such as /inbox and /rooms/room_market to index.html.
+services:
+  - type: web
+    name: anonymouse
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # npm ci skips devDependencies when NODE_ENV=production.
+      # Vite and TypeScript live in devDependencies, so the build needs them.
+      - key: NODE_ENV
+        value: development
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
