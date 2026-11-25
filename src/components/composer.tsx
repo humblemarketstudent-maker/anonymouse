@@ -1,11 +1,14 @@
 import { useState } from "react";
-import { Link2, Megaphone, Send } from "lucide-react";
+import { Megaphone, Send } from "lucide-react";
 import { toast } from "sonner";
 import { backend } from "@/backend";
-import type { NewsLink } from "@/backend/types";
+import type { ChatAttachment } from "@/backend/types";
 import { NEWS_ITEMS } from "@/data/floor";
 import { useFloor } from "@/hooks/use-floor";
+import { CONTACT_BLOCKED, contactViolation } from "@/lib/contact";
 import { previewFromUrl } from "@/lib/news";
+import { buildOutgoing } from "@/lib/outgoing";
+import { AttachButton, LinkButton, SharePreview } from "@/components/share-controls";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -17,7 +20,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { NewsCard } from "@/components/news-card";
 
 export function Composer({
@@ -33,28 +35,23 @@ export function Composer({
   const [mode, setMode] = useState<"take" | "link">("take");
   const [body, setBody] = useState("");
   const [url, setUrl] = useState("");
+  const [attachment, setAttachment] = useState<ChatAttachment | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [blastOpen, setBlastOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
 
-  const linkPreview = mode === "link" ? previewFromUrl(url, body) : null;
+  const linkBlocked = mode === "link" && url.trim() && contactViolation(url) ? CONTACT_BLOCKED : null;
+  const linkPreview = mode === "link" && url.trim() && !linkBlocked ? previewFromUrl(url, body) : null;
 
-  function draft(): { body: string; news?: NewsLink } | { error: string } {
-    if (mode === "link") {
-      const news = previewFromUrl(url, body);
-      if (!news) return { error: "Paste a full http(s) link." };
-      if (body.trim().length > 280) return { error: "Keep the take to 280 characters." };
-      return { body: body.trim(), news };
-    }
-    const text = body.trim();
-    if (/^https?:\/\/\S+$/.test(text)) {
-      const news = previewFromUrl(text);
-      if (!news) return { error: "That link doesn't look usable." };
-      return { body: "", news };
-    }
-    if (!text) return { error: "Write a take or attach a link." };
-    if (text.length > 280) return { error: "Keep it to 280 characters. This floor is fast." };
-    return { body: text };
+  function draft() {
+    return buildOutgoing({
+      body,
+      url,
+      linkOpen: mode === "link",
+      attachment: attachment ?? undefined,
+      maxLength: 280,
+      lengthError: "Keep it to 280 characters. This floor is fast.",
+    });
   }
 
   function publish(blastFriendIds?: string[]) {
@@ -66,6 +63,7 @@ export function Composer({
     const result = backend.postChatter({
       body: next.body,
       news: next.news,
+      attachment: next.attachment,
       roomId,
       blastFriendIds,
     });
@@ -75,6 +73,7 @@ export function Composer({
     }
     setBody("");
     setUrl("");
+    setAttachment(null);
     setError(null);
     setMode("take");
     setBlastOpen(false);
@@ -86,42 +85,39 @@ export function Composer({
 
   return (
     <div className="sticky bottom-0 z-20 min-w-0 shrink-0 border-t bg-background/95 px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur">
-      {mode === "link" ? (
-        <div className="mb-2 space-y-2 px-1">
-          <Input
-            value={url}
-            onChange={(event) => setUrl(event.target.value)}
-            placeholder="https://www.reuters.com/..."
-            aria-label="News link"
-            inputMode="url"
-            className="h-11"
-          />
-          <div className="flex gap-1.5 overflow-x-auto">
-            {NEWS_ITEMS.slice(0, 4).map((item) => (
-              <button
-                key={item.url}
-                type="button"
-                onClick={() => setUrl(item.url)}
-                className="shrink-0 rounded-full border border-border px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground"
-              >
-                {item.source}
-              </button>
-            ))}
-          </div>
-          {linkPreview ? <NewsCard news={linkPreview} /> : null}
-        </div>
-      ) : null}
+      <SharePreview
+        linkOpen={mode === "link"}
+        url={url}
+        onUrl={setUrl}
+        attachment={attachment}
+        onClearAttachment={() => setAttachment(null)}
+        preview={
+          <>
+            <div className="flex gap-1.5 overflow-x-auto">
+              {NEWS_ITEMS.slice(0, 4).map((item) => (
+                <button
+                  key={item.url}
+                  type="button"
+                  onClick={() => setUrl(item.url)}
+                  className="shrink-0 rounded-full border border-border px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground"
+                >
+                  {item.source}
+                </button>
+              ))}
+            </div>
+            {linkPreview ? <NewsCard news={linkPreview} /> : null}
+          </>
+        }
+      />
       <div className="flex min-w-0 items-end gap-1.5">
-        <Button
-          type="button"
-          variant={mode === "link" ? "secondary" : "ghost"}
-          className="size-11 shrink-0 rounded-full"
-          aria-label={mode === "link" ? "Close news link" : "News link"}
-          aria-pressed={mode === "link"}
-          onClick={() => setMode((current) => (current === "link" ? "take" : "link"))}
-        >
-          <Link2 />
-        </Button>
+        <AttachButton
+          onPick={(file) => {
+            setAttachment(file);
+            setError(null);
+          }}
+          onError={setError}
+        />
+        <LinkButton open={mode === "link"} onToggle={() => setMode((current) => (current === "link" ? "take" : "link"))} />
         <Textarea
           value={body}
           onChange={(event) => {
@@ -138,7 +134,7 @@ export function Composer({
           aria-label={placeholder}
           rows={1}
           maxLength={280}
-          className="max-h-28 min-h-11 w-auto min-w-0 flex-1 resize-none overflow-y-auto rounded-2xl border-transparent bg-secondary px-3 py-2.5 text-base leading-5 field-sizing-fixed"
+          className="composer-field max-h-28 min-h-11 w-auto min-w-0 flex-1 resize-none overflow-y-auto rounded-2xl border-transparent bg-secondary px-3 py-2.5 text-base leading-5 field-sizing-fixed"
         />
         <Button
           type="button"
@@ -162,11 +158,11 @@ export function Composer({
           <Send />
         </Button>
       </div>
-      {error || body.trim().length > 200 ? (
+      {error || linkBlocked || body.trim().length > 200 ? (
         <div className="mt-1 flex items-center justify-between gap-3 px-1">
-          {error ? (
+          {error || linkBlocked ? (
             <p role="alert" className="min-w-0 flex-1 text-sm leading-snug text-destructive">
-              {error}
+              {error || linkBlocked}
             </p>
           ) : (
             <span />

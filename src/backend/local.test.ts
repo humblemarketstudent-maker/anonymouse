@@ -1,9 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { MESSAGE_TTL_MS } from "@/backend/types";
+import { MESSAGE_TTL_MS, type ChatAttachment } from "@/backend/types";
+import { defaultAvatar } from "@/lib/avatar";
 import { CONTACT_BLOCKED } from "@/lib/contact";
 import { NEWS_ITEMS } from "@/data/floor";
 import { createLocalBackend, STORAGE_KEY, type Kv } from "@/backend/local";
 import { searchRooms } from "@/lib/search";
+
+function textFile(contents: string, name = "note.txt"): ChatAttachment {
+  const bytes = new TextEncoder().encode(contents);
+  return {
+    name,
+    mime: "text/plain",
+    size: bytes.length,
+    dataUrl: `data:text/plain;base64,${btoa(String.fromCharCode(...bytes))}`,
+  };
+}
 
 function memory(): Kv {
   const map = new Map<string, string>();
@@ -426,5 +437,86 @@ describe("local anonymouse", () => {
       hashtags: ["books"],
     });
     expect(taken.ok).toBe(false);
+  });
+
+  it("blasts the same message into every selected chat, or into none", async () => {
+    const { backend } = await signIn();
+    const threads = backend.getSnapshot().threads;
+    expect(threads.length).toBeGreaterThan(1);
+    const ids = threads.map((thread) => thread.id);
+    const before = backend.getSnapshot().messages.length;
+    const empty = backend.blastThreads([], "Hello");
+    expect(empty.ok).toBe(false);
+    const blocked = backend.blastThreads(ids, "text me 212-555-0199");
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) expect(blocked.error).toBe(CONTACT_BLOCKED);
+    expect(backend.getSnapshot().messages).toHaveLength(before);
+    expect(JSON.stringify(backend.getSnapshot())).not.toContain("212-555-0199");
+
+    const sent = backend.blastThreads(ids, "Same note for both desks.");
+    expect(sent.ok).toBe(true);
+    if (!sent.ok) return;
+    expect(sent.sent).toBe(ids.length);
+    for (const id of ids) {
+      const hit = backend.getSnapshot().messages.filter((message) => message.threadId === id && message.body === "Same note for both desks.");
+      expect(hit).toHaveLength(1);
+      expect(hit[0]?.kind).toBe("blast");
+    }
+  });
+
+  it("stores a file and a link card, and drops them with the message", async () => {
+    const storage = memory();
+    const { backend, advance } = await signIn(storage);
+    const threadId = backend.getSnapshot().threads[0]!.id;
+    const file = textFile("hello", "attachment-token.txt");
+    expect(backend.sendMessage(threadId, "See this", { attachment: file }).ok).toBe(true);
+    expect(
+      backend.sendMessage(threadId, "Worth a look", {
+        news: {
+          url: "https://www.reuters.com/markets/us/dollar-holds",
+          source: "Reuters",
+          title: "Dollar Holds",
+          summary: "Shared from Reuters.",
+        },
+      }).ok,
+    ).toBe(true);
+    const room = backend.postChatter({ body: "", roomId: "room_market", attachment: textFile("room", "brief.txt") });
+    expect(room.ok).toBe(true);
+    const live = backend.getSnapshot();
+    expect(live.messages.some((message) => message.attachment?.name === "attachment-token.txt")).toBe(true);
+    expect(live.messages.some((message) => message.news?.title === "Dollar Holds")).toBe(true);
+    expect(live.chatters.some((chatter) => chatter.attachment?.name === "brief.txt")).toBe(true);
+
+    const pii = backend.sendMessage(threadId, "mail jane@gmail.com", { attachment: textFile("nope", "should-not-land.txt") });
+    expect(pii.ok).toBe(false);
+    if (!pii.ok) expect(pii.error).toBe(CONTACT_BLOCKED);
+    const tel = backend.sendMessage(threadId, "", {
+      news: { url: "tel:+12125550148", source: "Phone", title: "Call", summary: "Now" },
+    });
+    expect(tel.ok).toBe(false);
+    expect(JSON.stringify(backend.getSnapshot())).not.toContain("should-not-land.txt");
+    expect(JSON.stringify(backend.getSnapshot())).not.toContain("tel:+12125550148");
+
+    advance(MESSAGE_TTL_MS + 5);
+    const expired = JSON.stringify(backend.getSnapshot());
+    expect(expired).not.toContain("attachment-token.txt");
+    expect(expired).not.toContain("Dollar Holds");
+    expect(expired).not.toContain("brief.txt");
+    expect(storage.getItem(STORAGE_KEY)).not.toContain("attachment-token.txt");
+  });
+
+  it("saves a mouse on the profile and restores it", async () => {
+    const storage = memory();
+    const { backend } = await signIn(storage);
+    expect(backend.getSnapshot().users.find((user) => user.id === "usr_macro")?.avatar?.eyes).toBe("Glowing Neon");
+    expect(backend.setAvatar(defaultAvatar()).ok).toBe(true);
+    expect(backend.getSnapshot().me?.avatar?.fur).toBe("Agouti Brown");
+    const me = backend.getSnapshot().me!;
+    expect(backend.updateProfile({ alias: me.alias, bioQuote: "Still flat", hashtags: me.hashtags }).ok).toBe(true);
+    expect(backend.getSnapshot().me?.avatar?.tail).toBe("Classic Smooth");
+    const restored = setup(storage).backend;
+    expect(restored.getSnapshot().me?.avatar?.skin).toBe("Soft Pink");
+    expect(backend.setAvatar(null).ok).toBe(true);
+    expect(backend.getSnapshot().me?.avatar ?? null).toBeNull();
   });
 });

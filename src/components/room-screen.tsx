@@ -8,7 +8,8 @@ import { ChatHeader } from "@/components/chat-header";
 import { ChatTranscript } from "@/components/chat-transcript";
 import { Composer } from "@/components/composer";
 import { Hashtags } from "@/components/hashtags";
-import { Monogram } from "@/components/monogram";
+import { Persona } from "@/components/persona";
+import { attachmentPreview } from "@/lib/files";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -42,6 +43,7 @@ export function RoomScreen() {
         body: line.body,
         createdAt: line.createdAt,
         news: line.news,
+        attachment: line.attachment,
       })),
     [lines],
   );
@@ -49,7 +51,7 @@ export function RoomScreen() {
   const people = useMemo(() => {
     const latest = new Map<string, { at: number; text: string }>();
     for (const line of lines) {
-      const text = line.body || line.news?.title || "";
+      const text = line.body || (line.attachment ? attachmentPreview(line.attachment) : line.news?.title || "");
       const prev = latest.get(line.authorId);
       if (!prev || line.createdAt > prev.at) latest.set(line.authorId, { at: line.createdAt, text });
     }
@@ -117,7 +119,7 @@ export function RoomScreen() {
         onAlias={openProfile}
       />
       {joined ? (
-        <Composer roomId={room.id} placeholder={`Message ${room.name}`} onSent={() => setPin((value) => value + 1)} />
+        <Composer roomId={room.id} placeholder="Message" onSent={() => setPin((value) => value + 1)} />
       ) : (
         <div className="sticky bottom-0 z-20 shrink-0 border-t bg-background/95 px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur">
           <Button
@@ -158,7 +160,7 @@ export function RoomScreen() {
                     className="flex w-full items-center gap-2.5 rounded-lg px-1.5 py-2 text-left hover:bg-muted"
                     onClick={() => openProfile(user.id)}
                   >
-                    <Monogram label={user.alias} className="size-8 text-xs" />
+                    <Persona label={user.alias} avatar={user.avatar} className="size-8 text-xs" />
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-semibold">
                         {user.alias}

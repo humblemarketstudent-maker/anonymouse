@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { backend } from "@/backend";
 import type { PublicUser } from "@/backend/types";
 import { EmptyState } from "@/components/empty-state";
+import { Persona } from "@/components/persona";
 import { Hashtags } from "@/components/hashtags";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -77,6 +78,7 @@ function FriendRow({ user, friend }: { user: PublicUser; friend: boolean }) {
   const navigate = useNavigate();
   return (
     <li className="flex items-start gap-3 border-b border-border px-4 py-3">
+      {user.avatar ? <Persona label={user.alias} avatar={user.avatar} className="mt-0.5 size-10" /> : null}
       <div className="min-w-0 flex-1">
         <button
           type="button"
