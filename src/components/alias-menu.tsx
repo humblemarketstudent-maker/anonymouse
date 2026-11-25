@@ -38,7 +38,7 @@ export function AliasMenu({ userId, chatterId }: { userId: string; chatterId?: s
         <DropdownMenuItem
           onSelect={() => {
             const threadId = openLine(userId);
-            if (threadId) navigate(`/inbox/${threadId}`);
+            if (threadId) navigate(`/msg/${threadId}`);
           }}
         >
           Message

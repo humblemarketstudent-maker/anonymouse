@@ -5,43 +5,41 @@
  * by satisfying `Backend`.
  */
 
-export const SECTORS = [
-  "Investment Banking",
-  "Hedge Fund",
-  "Private Equity",
-  "Venture Capital",
-  "Quant/Trading",
-  "Wealth Management",
-  "FinTech",
-  "Crypto/DeFi",
-  "Retail/Other",
-] as const;
-
-export type Sector = (typeof SECTORS)[number];
-
-export const SECTOR_SHORT: Record<Sector, string> = {
-  "Investment Banking": "IB",
-  "Hedge Fund": "Hedge",
-  "Private Equity": "PE",
-  "Venture Capital": "VC",
-  "Quant/Trading": "Quant",
-  "Wealth Management": "Wealth",
-  FinTech: "FinTech",
-  "Crypto/DeFi": "Crypto",
-  "Retail/Other": "Retail",
-};
-
-export type Method = "phone" | "email";
-
-/** Demo OTP accepted by the local backend. Documented in the README and on the sign-in screen. */
+/** Demo OTP accepted by the local backend. Any phone number works with this code. */
 export const DEMO_OTP = "000000";
+
+/** Conversation requests the signed-in user can send per local day. */
+export const TAP_LIMIT = 5;
+
+/** How many aliases Match shows at once. */
+export const MATCH_PAGE = 10;
+
+/** How long a decline or an ended match stays out of Match. */
+export const MATCH_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+
+export type ThreadOrigin = "direct" | "match";
 
 export interface PublicUser {
   id: string;
   alias: string;
   bioQuote: string;
-  sector: Sector;
+  hashtags: string[];
   joinedAt: number;
+}
+
+export interface Room {
+  id: string;
+  name: string;
+  blurb: string;
+  hashtags: string[];
+  createdBy: string;
+  createdAt: number;
+  listeners: number;
+}
+
+export interface HashtagCount {
+  tag: string;
+  count: number;
 }
 
 export interface NewsLink {
@@ -54,7 +52,7 @@ export interface NewsLink {
 export interface Chatter {
   id: string;
   authorId: string;
-  roomId: string | null;
+  roomId: string;
   body: string;
   news?: NewsLink;
   createdAt: number;
@@ -63,6 +61,7 @@ export interface Chatter {
 export interface ThreadSummary {
   id: string;
   peerId: string;
+  origin: ThreadOrigin;
   updatedAt: number;
   unread: number;
   preview: string;
@@ -93,27 +92,48 @@ export interface Flash {
   title: string;
   body: string;
   threadId?: string;
+  match?: boolean;
+}
+
+export interface IncomingTap {
+  id: string;
+  fromId: string;
+  createdAt: number;
+}
+
+export interface OutgoingTap {
+  id: string;
+  toId: string;
+  createdAt: number;
 }
 
 export interface ProfileInput {
   alias: string;
   bioQuote: string;
-  sector: Sector;
+  hashtags: string[];
 }
 
 export interface Snapshot {
-  session: { userId: string; method: Method } | null;
+  session: { userId: string; method: "phone" } | null;
   me: PublicUser | null;
   users: PublicUser[];
   directory: PublicUser[];
   blockedUsers: PublicUser[];
   friendIds: string[];
+  rooms: Room[];
+  joinedRoomIds: string[];
+  topHashtags: HashtagCount[];
   chatters: Chatter[];
   threads: ThreadSummary[];
   messages: DirectMessage[];
   notifications: AppNotification[];
   flashes: Flash[];
   announcement: string;
+  matchPeerIds: string[];
+  tapsRemaining: number;
+  tapLimit: number;
+  incomingTaps: IncomingTap[];
+  outgoingTaps: OutgoingTap[];
 }
 
 export type Result<T extends object = object> =
@@ -123,20 +143,24 @@ export type Result<T extends object = object> =
 export interface Backend {
   subscribe(listener: () => void): () => void;
   getSnapshot(): Snapshot;
-  requestOtp(input: { contact: string; method: Method }): Promise<Result>;
+  requestOtp(input: { contact: string }): Promise<Result>;
   verifyOtp(code: string): Promise<Result<{ needsProfile: boolean }>>;
   completeProfile(input: ProfileInput): Result;
   updateProfile(input: ProfileInput): Result;
   signOut(): void;
+  createRoom(input: { name: string; blurb: string; hashtags: string[] }): Result<{ roomId: string }>;
+  joinRoom(roomId: string): Result;
+  leaveRoom(roomId: string): Result;
   postChatter(input: {
     body: string;
-    roomId: string | null;
+    roomId: string;
     news?: NewsLink;
     blastFriendIds?: string[];
   }): Result<{ id: string }>;
   sendMessage(threadId: string, body: string): Result;
   openThread(peerId: string): Result<{ threadId: string }>;
   burnThread(threadId: string): void;
+  endMatch(threadId: string): Result;
   addFriend(userId: string): Result;
   removeFriend(userId: string): void;
   blockUser(userId: string): void;
@@ -146,6 +170,11 @@ export interface Backend {
   markNotificationsRead(): void;
   ackFlash(id: string): void;
   setPresence(presence: { threadId: string | null }): void;
+  refreshMatch(): Result;
+  ensureMatch(): void;
+  tapUser(userId: string): Result;
+  acceptTap(tapId: string): Result<{ threadId: string }>;
+  declineTap(tapId: string): Result;
   resetFloor(): void;
   startLive(): void;
   stopLive(): void;

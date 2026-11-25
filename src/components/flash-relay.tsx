@@ -18,9 +18,14 @@ export function FlashRelay() {
         action: flash.threadId
           ? {
               label: "Open",
-              onClick: () => navigate(`/inbox/${flash.threadId}`),
+              onClick: () => navigate(`/msg/${flash.threadId}`),
             }
-          : undefined,
+          : flash.match
+            ? {
+                label: "Match",
+                onClick: () => navigate("/match"),
+              }
+            : undefined,
       });
       backend.ackFlash(flash.id);
     }

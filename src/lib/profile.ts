@@ -1,8 +1,5 @@
-import { SECTORS, type ProfileInput, type PublicUser, type Sector } from "@/backend/types";
-
-export function isSector(value: string): value is Sector {
-  return (SECTORS as readonly string[]).includes(value);
-}
+import type { ProfileInput, PublicUser } from "@/backend/types";
+import { collectHashtags } from "@/lib/hashtags";
 
 export function aliasError(alias: string, users: Pick<PublicUser, "id" | "alias">[], selfId?: string): string | null {
   const value = alias.trim();
@@ -13,13 +10,13 @@ export function aliasError(alias: string, users: Pick<PublicUser, "id" | "alias"
   const taken = users.some(
     (user) => user.id !== selfId && user.alias.toLowerCase() === value.toLowerCase(),
   );
-  if (taken) return "That alias is already on the floor.";
+  if (taken) return "That alias is already taken.";
   return null;
 }
 
 export function bioError(bio: string): string | null {
   const value = bio.trim();
-  if (!value) return "Add a one-line quote.";
+  if (!value) return "Add a quote about yourself.";
   if (value.length > 80) return "Keep the quote to one line, 80 characters.";
   return null;
 }
@@ -29,5 +26,10 @@ export function profileError(
   users: Pick<PublicUser, "id" | "alias">[],
   selfId?: string,
 ): string | null {
-  return aliasError(input.alias, users, selfId) ?? bioError(input.bioQuote) ?? (isSector(input.sector) ? null : "Pick a desk.");
+  const tags = collectHashtags(input.hashtags, { min: 0, max: 8 });
+  return aliasError(input.alias, users, selfId) ?? bioError(input.bioQuote) ?? tags.error;
+}
+
+export function cleanedProfileHashtags(raw: string[]): string[] {
+  return collectHashtags(raw, { min: 0, max: 8 }).tags;
 }

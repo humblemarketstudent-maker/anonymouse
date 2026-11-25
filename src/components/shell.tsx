@@ -1,5 +1,5 @@
-import { Bell, CircleUserRound, Hash, Inbox, Radio, Users } from "lucide-react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Bell, Bookmark, CircleUserRound, Hash, Inbox, Sparkles, Users } from "lucide-react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { backend } from "@/backend";
 import { Mark } from "@/components/mark";
 import { ModerationProvider } from "@/components/moderation";
@@ -14,11 +14,12 @@ import { useFloor } from "@/hooks/use-floor";
 import { cn } from "@/lib/utils";
 
 const LINKS = [
-  { to: "/", label: "Chatter", icon: Radio, end: true },
-  { to: "/rooms", label: "Rooms", icon: Hash, end: false },
-  { to: "/inbox", label: "Inbox", icon: Inbox, end: false },
+  { to: "/", label: "Chats", icon: Hash, end: true },
+  { to: "/mine", label: "My Rooms", icon: Bookmark, end: true },
+  { to: "/match", label: "Match", icon: Sparkles, end: true },
+  { to: "/msg", label: "MSG", icon: Inbox, end: false },
   { to: "/friends", label: "Friends", icon: Users, end: true },
-  { to: "/me", label: "You", icon: CircleUserRound, end: true },
+  { to: "/you", label: "You", icon: CircleUserRound, end: true },
 ] as const;
 
 export function Shell() {
@@ -45,7 +46,7 @@ function Sidebar() {
         <Mark className="size-9" />
         <span>
           <span className="block text-base font-semibold tracking-tight">Anonymouse</span>
-          <span className="block text-[11px] text-muted-foreground">The floor</span>
+          <span className="block text-[11px] text-muted-foreground">No names. No faces.</span>
         </span>
       </NavLink>
       <nav className="flex flex-1 flex-col gap-1 px-2">
@@ -54,31 +55,29 @@ function Sidebar() {
         ))}
       </nav>
       <p className="px-4 py-4 text-[11px] leading-relaxed text-muted-foreground">
-        Demo floor. Code 000000. Nothing here is advice.
+        Demo. Any phone, code 000000.
       </p>
     </aside>
   );
 }
 
 function NavItem({ to, label, icon: Icon, end }: (typeof LINKS)[number]) {
-  const { threads } = useFloor();
-  const unread = threads.reduce((sum, thread) => sum + thread.unread, 0);
+  const active = useTabActive(to);
+  const badge = useBadge(label);
   return (
     <NavLink
       to={to}
       end={end}
-      className={({ isActive }) =>
-        cn(
-          "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground",
-          isActive && "bg-primary/10 text-primary",
-        )
-      }
+      className={cn(
+        "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground",
+        active && "bg-primary/10 text-primary",
+      )}
     >
       <Icon className="size-4" />
       <span>{label}</span>
-      {label === "Inbox" && unread > 0 ? (
+      {badge > 0 ? (
         <span className="ml-auto rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
-          {unread}
+          {badge}
         </span>
       ) : null}
     </NavLink>
@@ -92,7 +91,7 @@ function TopBar() {
         <Mark className="size-7" />
         <span className="font-semibold tracking-tight">Anonymouse</span>
       </NavLink>
-      <p className="hidden text-sm text-muted-foreground md:block">Anonymous floor. No names, no faces.</p>
+      <p className="hidden text-sm text-muted-foreground md:block">Anonymous. No names, no faces.</p>
       <div className="flex items-center gap-2">
         <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           <span className="relative flex size-1.5">
@@ -112,25 +111,34 @@ function BellMenu() {
   const navigate = useNavigate();
   const unread = notifications.filter((note) => !note.read).length;
   return (
-    <DropdownMenu onOpenChange={(open) => { if (open) backend.markNotificationsRead(); }}>
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (open) backend.markNotificationsRead();
+      }}
+    >
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant="ghost" size="icon" aria-label={unread ? `${unread} notifications` : "Notifications"} className="relative">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={unread ? `${unread} notifications` : "Notifications"}
+          className="relative"
+        >
           <Bell />
-          {unread > 0 ? (
-            <span className="absolute top-1 right-1 size-2 rounded-full bg-primary" />
-          ) : null}
+          {unread > 0 ? <span className="absolute top-1 right-1 size-2 rounded-full bg-primary" /> : null}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80">
         {notifications.length === 0 ? (
-          <p className="px-3 py-6 text-center text-sm text-muted-foreground">Nothing new on your lines.</p>
+          <p className="px-3 py-6 text-center text-sm text-muted-foreground">Nothing new.</p>
         ) : (
           notifications.slice(0, 8).map((note) => (
             <DropdownMenuItem
               key={note.id}
               className="items-start"
               onSelect={() => {
-                if (note.threadId) navigate(`/inbox/${note.threadId}`);
+                if (note.threadId) navigate(`/msg/${note.threadId}`);
+                else if (note.peerId) navigate("/match");
               }}
             >
               <span className="min-w-0">
@@ -146,29 +154,50 @@ function BellMenu() {
 }
 
 function MobileNav() {
-  const { threads } = useFloor();
-  const unread = threads.reduce((sum, thread) => sum + thread.unread, 0);
   return (
-    <nav className="grid h-16 shrink-0 grid-cols-5 border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden">
+    <nav className="grid h-[4.25rem] shrink-0 grid-cols-6 border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden">
       {LINKS.map((link) => (
-        <NavLink
-          key={link.to}
-          to={link.to}
-          end={link.end}
-          className={({ isActive }) =>
-            cn(
-              "relative flex flex-col items-center justify-center gap-0.5 text-[10px] text-muted-foreground",
-              isActive && "text-primary",
-            )
-          }
-        >
-          <link.icon className="size-4" />
-          {link.label}
-          {link.label === "Inbox" && unread > 0 ? (
-            <span className="absolute top-2 right-[calc(50%-18px)] size-1.5 rounded-full bg-primary" />
-          ) : null}
-        </NavLink>
+        <MobileItem key={link.to} {...link} />
       ))}
     </nav>
   );
+}
+
+function MobileItem({ to, label, icon: Icon, end }: (typeof LINKS)[number]) {
+  const active = useTabActive(to);
+  const badge = useBadge(label);
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={cn(
+        "relative flex flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] leading-tight text-muted-foreground",
+        active && "text-primary",
+      )}
+    >
+      <Icon className="size-4" />
+      <span className="max-w-full truncate">{label}</span>
+      {badge > 0 ? <span className="absolute top-1.5 right-[calc(50%-16px)] size-1.5 rounded-full bg-primary" /> : null}
+    </NavLink>
+  );
+}
+
+function useBadge(label: string) {
+  const { threads, incomingTaps } = useFloor();
+  if (label === "MSG") return threads.reduce((sum, thread) => sum + thread.unread, 0);
+  if (label === "Match") return incomingTaps.length;
+  return 0;
+}
+
+function useTabActive(to: string) {
+  const { pathname } = useLocation();
+  const { joinedRoomIds } = useFloor();
+  const roomMatch = pathname.match(/^\/room\/([^/]+)/);
+  const roomId = roomMatch ? decodeURIComponent(roomMatch[1] ?? "") : "";
+  const inRoom = Boolean(roomId);
+  const joined = inRoom && joinedRoomIds.includes(roomId);
+  if (to === "/") return pathname === "/" || pathname === "/chats/new" || (inRoom && !joined);
+  if (to === "/mine") return pathname === "/mine" || (inRoom && joined);
+  if (to === "/msg") return pathname === "/msg" || pathname.startsWith("/msg/");
+  return pathname === to;
 }

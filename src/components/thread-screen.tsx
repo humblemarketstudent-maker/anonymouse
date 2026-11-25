@@ -4,8 +4,8 @@ import { ArrowLeft, Flame, Send } from "lucide-react";
 import { toast } from "sonner";
 import { backend } from "@/backend";
 import { AliasMenu } from "@/components/alias-menu";
+import { Hashtags } from "@/components/hashtags";
 import { NewsCard } from "@/components/news-card";
-import { SectorBadge } from "@/components/sector-badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -34,6 +34,7 @@ export function ThreadScreen() {
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [burnOpen, setBurnOpen] = useState(false);
+  const [endOpen, setEndOpen] = useState(false);
 
   useEffect(() => {
     backend.setPresence({ threadId });
@@ -54,9 +55,9 @@ export function ThreadScreen() {
   if (!thread || !peer || !me) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-        <p className="text-sm text-muted-foreground">This line is gone.</p>
+        <p className="text-sm text-muted-foreground">This conversation is gone.</p>
         <Button variant="outline" asChild>
-          <Link to="/inbox">Back to inbox</Link>
+          <Link to="/msg">Back to MSG</Link>
         </Button>
       </div>
     );
@@ -73,21 +74,31 @@ export function ThreadScreen() {
     stick.current = true;
   }
 
+  const fromMatch = thread.origin === "match";
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex shrink-0 items-start gap-1 border-b px-2 py-2">
         <Button variant="ghost" size="icon" className="md:hidden" asChild>
-          <Link to="/inbox" aria-label="Back to inbox">
+          <Link to="/msg" aria-label="Back to MSG">
             <ArrowLeft />
           </Link>
         </Button>
         <div className="min-w-0 flex-1 px-1 py-1">
           <div className="flex items-center gap-2">
             <h1 className="truncate text-base font-semibold">{peer.alias}</h1>
-            <SectorBadge sector={peer.sector} />
+            <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
+              {fromMatch ? "Match" : "Direct"}
+            </span>
           </div>
           <p className="truncate text-xs italic text-muted-foreground">{peer.bioQuote}</p>
+          <Hashtags tags={peer.hashtags} className="mt-1" />
         </div>
+        {fromMatch ? (
+          <Button type="button" variant="ghost" size="sm" className="mt-1" onClick={() => setEndOpen(true)}>
+            End
+          </Button>
+        ) : null}
         <Button type="button" variant="ghost" size="icon" aria-label="Burn this chat" onClick={() => setBurnOpen(true)}>
           <Flame />
         </Button>
@@ -103,18 +114,15 @@ export function ThreadScreen() {
         }}
       >
         {lines.length === 0 ? (
-          <p className="pt-10 text-center text-sm text-muted-foreground">Say something off the tape.</p>
+          <p className="pt-10 text-center text-sm text-muted-foreground">
+            {fromMatch ? "They accepted. Say something." : "Say something. This stays between aliases."}
+          </p>
         ) : null}
         {lines.map((message) => {
           const mine = message.senderId === me.id;
           return (
             <div key={message.id} className={cn("flex", mine ? "justify-end" : "justify-start")}>
-              <div
-                className={cn(
-                  "max-w-[85%] rounded-2xl px-3 py-2",
-                  mine ? "bg-primary/15" : "bg-card",
-                )}
-              >
+              <div className={cn("max-w-[85%] rounded-2xl px-3 py-2", mine ? "bg-primary/15" : "bg-card")}>
                 {message.kind === "blast" ? (
                   <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.16em] text-primary">Blast</div>
                 ) : null}
@@ -165,7 +173,9 @@ export function ThreadScreen() {
           <DialogHeader>
             <DialogTitle>Burn this chat?</DialogTitle>
             <DialogDescription>
-              Every message in this line is wiped from this device. You can open a new line with {peer.alias} later.
+              {fromMatch
+                ? `Every message with ${peer.alias} is wiped on this device, the match ends, and they stay out of Match for a while.`
+                : `Every message in this line is wiped on this device. You can open a new line with ${peer.alias} later.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -178,10 +188,40 @@ export function ThreadScreen() {
               onClick={() => {
                 backend.burnThread(thread.id);
                 toast("Chat burned.");
-                navigate("/inbox");
+                navigate("/msg");
               }}
             >
               Burn chat
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={endOpen} onOpenChange={setEndOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>End this match?</DialogTitle>
+            <DialogDescription>
+              The conversation closes and {peer.alias} won't show up in the next Match passes.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEndOpen(false)}>
+              Keep talking
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                const result = backend.endMatch(thread.id);
+                if (!result.ok) {
+                  toast.error(result.error);
+                  return;
+                }
+                toast("Match ended.");
+                navigate("/msg");
+              }}
+            >
+              End match
             </Button>
           </DialogFooter>
         </DialogContent>

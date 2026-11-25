@@ -21,7 +21,7 @@ import { Input } from "@/components/ui/input";
 import { NewsCard } from "@/components/news-card";
 import { cn } from "@/lib/utils";
 
-export function Composer({ roomId, placeholder }: { roomId: string | null; placeholder: string }) {
+export function Composer({ roomId, placeholder }: { roomId: string; placeholder: string }) {
   const { friendIds, usersById } = useFloor();
   const [mode, setMode] = useState<"take" | "link">("take");
   const [body, setBody] = useState("");
@@ -73,7 +73,7 @@ export function Composer({ roomId, placeholder }: { roomId: string | null; place
     if (blastFriendIds && blastFriendIds.length > 0) {
       toast.success(`Blasted to ${blastFriendIds.length}`);
     } else {
-      toast.success(roomId ? "Posted in the room" : "On the floor");
+      toast.success("Posted in the room");
     }
   }
 

@@ -64,7 +64,7 @@ export function ModerationProvider({ children }: { children: ReactNode }) {
 
   function leaveIfOpen(userId: string) {
     const thread = threads.find((item) => item.peerId === userId);
-    if (thread && location.pathname.includes(thread.id)) navigate("/inbox");
+    if (thread && location.pathname.includes(thread.id)) navigate("/msg");
   }
 
   return (
@@ -112,7 +112,7 @@ export function ModerationProvider({ children }: { children: ReactNode }) {
                   leaveIfOpen(report.authorId);
                 }
                 setReport(null);
-                toast.success("Report filed. Thanks for keeping the floor clean.");
+                toast.success("Report filed.");
               }}
             >
               File report
@@ -125,7 +125,7 @@ export function ModerationProvider({ children }: { children: ReactNode }) {
           <DialogHeader>
             <DialogTitle>Block {blockAlias ?? "this alias"}?</DialogTitle>
             <DialogDescription>
-              Their chatters leave your feed and the line goes dead. You can unblock them from your desk.
+              Their lines leave your rooms and MSG. You can unblock them from You.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

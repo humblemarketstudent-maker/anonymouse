@@ -1,17 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { backend } from "@/backend";
-import type { Method } from "@/backend/types";
 import { DEMO_OTP } from "@/backend/types";
 import { Mark } from "@/components/mark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export function AuthScreen() {
   const navigate = useNavigate();
-  const [method, setMethod] = useState<Method>("email");
   const [contact, setContact] = useState("");
   const [step, setStep] = useState<"contact" | "code">("contact");
   const [code, setCode] = useState("");
@@ -23,7 +20,7 @@ export function AuthScreen() {
     event?.preventDefault();
     setBusy(true);
     setError(null);
-    const result = await backend.requestOtp({ method, contact });
+    const result = await backend.requestOtp({ contact });
     setBusy(false);
     if (!result.ok) {
       setError(result.error);
@@ -66,36 +63,30 @@ export function AuthScreen() {
         <Mark className="size-16" />
         <h1 className="mt-5 text-4xl font-semibold tracking-tight">Anonymouse</h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          Anonymous chatter for the financial floor. No faces, no resumes, no real names.
+          Anonymous rooms and private lines. No names, no faces, no resumes.
         </p>
         <p className="mt-4 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
-          Preview mode. Any phone or email works. The code is{" "}
+          Preview mode. Any phone number works. The code is{" "}
           <span className="font-semibold tabular-nums">{DEMO_OTP}</span>.
         </p>
 
         {step === "contact" ? (
           <form className="mt-8 space-y-4" onSubmit={(event) => void requestCode(event)}>
-            <Tabs value={method} onValueChange={(value) => { setMethod(value as Method); setError(null); }}>
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="phone">Phone</TabsTrigger>
-                <TabsTrigger value="email">Email</TabsTrigger>
-              </TabsList>
-            </Tabs>
             <div className="space-y-2">
-              <Label htmlFor="contact">{method === "email" ? "Email" : "Phone number"}</Label>
+              <Label htmlFor="contact">Phone number</Label>
               <Input
                 id="contact"
                 value={contact}
                 onChange={(event) => setContact(event.target.value)}
-                autoComplete={method === "email" ? "email" : "tel"}
-                inputMode={method === "email" ? "email" : "tel"}
-                placeholder={method === "email" ? "you@desk.com" : "+1 212 555 0148"}
+                autoComplete="tel"
+                inputMode="tel"
+                placeholder="+1 212 555 0148"
                 className="h-11"
                 aria-invalid={error ? true : undefined}
                 required
               />
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Used only to sign you back in on this device. It is never shown on a chatter, in a room, or in a DM.
+                Used only to sign you back in on this device. It never appears on a profile, in a room, or in a message.
               </p>
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -121,13 +112,11 @@ export function AuthScreen() {
                 }}
                 disabled={busy}
               />
-              <p className="text-xs text-muted-foreground">
-                This preview does not text or email anyone. Enter {DEMO_OTP}.
-              </p>
+              <p className="text-xs text-muted-foreground">This preview does not text anyone. Enter {DEMO_OTP}.</p>
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <Button type="submit" className="h-11 w-full" disabled={busy || code.length !== 6}>
-              {busy ? "Checking…" : "Enter the floor"}
+              {busy ? "Checking…" : "Continue"}
             </Button>
             <Button
               type="button"
@@ -139,12 +128,12 @@ export function AuthScreen() {
                 setError(null);
               }}
             >
-              Use a different {method === "email" ? "email" : "number"}
+              Use a different number
             </Button>
           </form>
         )}
         <p className="mt-8 text-[11px] leading-relaxed text-muted-foreground">
-          Prototype only. Nothing on this floor is research, a solicitation, or advice.
+          Prototype only. Nothing here is advice.
         </p>
       </div>
     </main>
