@@ -23,20 +23,26 @@ const LINKS = [
 ] as const;
 
 export function Shell() {
+  const chat = useChatFocus();
   return (
     <ModerationProvider>
       <div className="flex h-dvh overflow-hidden bg-background text-foreground">
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
-          <TopBar />
+          {chat ? null : <TopBar />}
           <div className="flex min-h-0 flex-1 flex-col">
             <Outlet />
-            <MobileNav />
+            {chat ? null : <MobileNav />}
           </div>
         </div>
       </div>
     </ModerationProvider>
   );
+}
+
+function useChatFocus() {
+  const { pathname } = useLocation();
+  return /^\/room\/[^/]+$/.test(pathname) || /^\/msg\/[^/]+$/.test(pathname);
 }
 
 function Sidebar() {

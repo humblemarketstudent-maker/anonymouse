@@ -19,9 +19,16 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { NewsCard } from "@/components/news-card";
-import { cn } from "@/lib/utils";
 
-export function Composer({ roomId, placeholder }: { roomId: string; placeholder: string }) {
+export function Composer({
+  roomId,
+  placeholder,
+  onSent,
+}: {
+  roomId: string;
+  placeholder: string;
+  onSent?: () => void;
+}) {
   const { friendIds, usersById } = useFloor();
   const [mode, setMode] = useState<"take" | "link">("take");
   const [body, setBody] = useState("");
@@ -69,53 +76,25 @@ export function Composer({ roomId, placeholder }: { roomId: string; placeholder:
     setBody("");
     setUrl("");
     setError(null);
+    setMode("take");
     setBlastOpen(false);
-    if (blastFriendIds && blastFriendIds.length > 0) {
-      toast.success(`Blasted to ${blastFriendIds.length}`);
-    } else {
-      toast.success("Posted in the room");
-    }
+    onSent?.();
+    if (blastFriendIds && blastFriendIds.length > 0) toast.success(`Blasted to ${blastFriendIds.length}`);
   }
 
   const allSelected = friendIds.length > 0 && friendIds.every((id) => selected.includes(id));
 
   return (
-    <div className="shrink-0 border-t bg-background/95 px-3 py-2.5 backdrop-blur">
-      <div className="mb-2 flex items-center gap-1">
-        <button
-          type="button"
-          className={cn(
-            "rounded-full px-2.5 py-1 text-xs font-medium",
-            mode === "take" ? "bg-primary/15 text-primary" : "text-muted-foreground",
-          )}
-          onClick={() => setMode("take")}
-        >
-          Take
-        </button>
-        <button
-          type="button"
-          className={cn(
-            "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium",
-            mode === "link" ? "bg-primary/15 text-primary" : "text-muted-foreground",
-          )}
-          onClick={() => setMode("link")}
-        >
-          <Link2 className="size-3" />
-          News link
-        </button>
-        {body.trim().length > 200 ? (
-          <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">{body.trim().length}/280</span>
-        ) : null}
-      </div>
+    <div className="sticky bottom-0 z-20 shrink-0 border-t bg-background/95 px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur">
       {mode === "link" ? (
-        <div className="mb-2 space-y-2">
+        <div className="mb-2 space-y-2 px-1">
           <Input
             value={url}
             onChange={(event) => setUrl(event.target.value)}
             placeholder="https://www.reuters.com/..."
             aria-label="News link"
             inputMode="url"
-            className="h-10"
+            className="h-11"
           />
           <div className="flex gap-1.5 overflow-x-auto">
             {NEWS_ITEMS.slice(0, 4).map((item) => (
@@ -123,7 +102,7 @@ export function Composer({ roomId, placeholder }: { roomId: string; placeholder:
                 key={item.url}
                 type="button"
                 onClick={() => setUrl(item.url)}
-                className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
+                className="shrink-0 rounded-full border border-border px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground"
               >
                 {item.source}
               </button>
@@ -132,7 +111,17 @@ export function Composer({ roomId, placeholder }: { roomId: string; placeholder:
           {linkPreview ? <NewsCard news={linkPreview} /> : null}
         </div>
       ) : null}
-      <div className="flex items-end gap-2">
+      <div className="flex items-end gap-1.5">
+        <Button
+          type="button"
+          variant={mode === "link" ? "secondary" : "ghost"}
+          className="size-11 shrink-0 rounded-full"
+          aria-label={mode === "link" ? "Close news link" : "News link"}
+          aria-pressed={mode === "link"}
+          onClick={() => setMode((current) => (current === "link" ? "take" : "link"))}
+        >
+          <Link2 />
+        </Button>
         <Textarea
           value={body}
           onChange={(event) => {
@@ -149,12 +138,12 @@ export function Composer({ roomId, placeholder }: { roomId: string; placeholder:
           aria-label={placeholder}
           rows={1}
           maxLength={280}
-          className="max-h-28 min-h-10 flex-1 resize-none py-2.5"
+          className="max-h-28 min-h-11 flex-1 resize-none overflow-y-auto rounded-2xl border-transparent bg-secondary px-3 py-2.5 text-base leading-5"
         />
         <Button
           type="button"
-          variant="outline"
-          size="icon"
+          variant="ghost"
+          className="size-11 shrink-0 rounded-full"
           aria-label="Blast to friends"
           onClick={() => {
             const next = draft();
@@ -169,13 +158,18 @@ export function Composer({ roomId, placeholder }: { roomId: string; placeholder:
         >
           <Megaphone />
         </Button>
-        <Button type="button" size="icon" aria-label="Post" onClick={() => publish()}>
+        <Button type="button" className="size-11 shrink-0 rounded-full" aria-label="Send" onClick={() => publish()}>
           <Send />
         </Button>
       </div>
-      <div className="mt-1.5 flex items-center justify-between gap-3">
-        {error ? <p className="text-xs text-destructive">{error}</p> : <p className="text-[11px] text-muted-foreground">Enter posts · Shift+Enter for a new line</p>}
-      </div>
+      {error || body.trim().length > 200 ? (
+        <div className="mt-1 flex items-center justify-between gap-3 px-1">
+          {error ? <p className="text-xs text-destructive">{error}</p> : <span />}
+          {body.trim().length > 200 ? (
+            <span className="ml-auto text-[11px] text-muted-foreground tabular-nums">{body.trim().length}/280</span>
+          ) : null}
+        </div>
+      ) : null}
       <Dialog open={blastOpen} onOpenChange={setBlastOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

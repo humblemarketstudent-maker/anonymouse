@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { backend } from "@/backend";
 import { Hashtags } from "@/components/hashtags";
+import { Monogram } from "@/components/monogram";
 import { Button } from "@/components/ui/button";
 import { useFloor } from "@/hooks/use-floor";
 import { openLine } from "@/lib/open-line";
@@ -36,7 +37,10 @@ export function ProfileScreen() {
         <h1 className="truncate text-base font-semibold">Profile</h1>
       </header>
       <div className="mx-auto w-full max-w-lg px-4 py-6">
-        <h2 className="text-3xl font-semibold tracking-tight">{user.alias}</h2>
+        <div className="flex items-center gap-3">
+          <Monogram label={user.alias} className="size-12 text-lg" />
+          <h2 className="min-w-0 truncate text-3xl font-semibold tracking-tight">{user.alias}</h2>
+        </div>
         <p className="mt-3 font-serif text-xl leading-snug">{user.bioQuote}</p>
         <Hashtags tags={user.hashtags} className="mt-4" />
         {mine ? (

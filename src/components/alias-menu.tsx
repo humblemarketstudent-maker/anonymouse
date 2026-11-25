@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Flag, MoreHorizontal, UserMinus, UserPlus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -14,7 +15,21 @@ import { useFloor } from "@/hooks/use-floor";
 import { openLine } from "@/lib/open-line";
 import { useModeration } from "@/hooks/use-moderation";
 
-export function AliasMenu({ userId, chatterId }: { userId: string; chatterId?: string }) {
+export function AliasMenu({
+  userId,
+  chatterId,
+  showMessage = true,
+  label = "Alias actions",
+  className,
+  children,
+}: {
+  userId: string;
+  chatterId?: string;
+  showMessage?: boolean;
+  label?: string;
+  className?: string;
+  children?: ReactNode;
+}) {
   const { me, friendIds } = useFloor();
   const moderation = useModeration();
   const navigate = useNavigate();
@@ -27,22 +42,25 @@ export function AliasMenu({ userId, chatterId }: { userId: string; chatterId?: s
         <Button
           type="button"
           variant="ghost"
-          size="icon-sm"
-          aria-label="Alias actions"
+          className={className ?? "size-11"}
+          aria-label={label}
           onClick={(event) => event.stopPropagation()}
         >
           <MoreHorizontal />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48" onClick={(event) => event.stopPropagation()}>
-        <DropdownMenuItem
-          onSelect={() => {
-            const threadId = openLine(userId);
-            if (threadId) navigate(`/msg/${threadId}`);
-          }}
-        >
-          Message
-        </DropdownMenuItem>
+        {children}
+        {showMessage ? (
+          <DropdownMenuItem
+            onSelect={() => {
+              const threadId = openLine(userId);
+              if (threadId) navigate(`/msg/${threadId}`);
+            }}
+          >
+            Message
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem
           onSelect={() => {
             if (friend) {
