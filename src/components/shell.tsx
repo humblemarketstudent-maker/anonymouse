@@ -1,5 +1,5 @@
 import { Bell, Bookmark, CircleUserRound, Hash, Inbox, Sparkles, Users } from "lucide-react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { backend } from "@/backend";
 import { Mark } from "@/components/mark";
 import { ModerationProvider } from "@/components/moderation";
@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useFloor } from "@/hooks/use-floor";
+import { threadPath } from "@/lib/open-line";
 import { cn } from "@/lib/utils";
 
 const LINKS = [
@@ -42,7 +43,10 @@ export function Shell() {
 
 function useChatFocus() {
   const { pathname } = useLocation();
-  return /^\/room\/[^/]+$/.test(pathname) || /^\/msg\/[^/]+$/.test(pathname);
+  const [params] = useSearchParams();
+  if ((pathname === "/" || pathname === "/mine") && params.get("room")) return true;
+  if (pathname === "/msg" && params.get("thread")) return true;
+  return false;
 }
 
 function Sidebar() {
@@ -143,7 +147,7 @@ function BellMenu() {
               key={note.id}
               className="items-start"
               onSelect={() => {
-                if (note.threadId) navigate(`/msg/${note.threadId}`);
+                if (note.threadId) navigate(threadPath(note.threadId));
                 else if (note.peerId) navigate("/match");
               }}
             >
@@ -197,13 +201,8 @@ function useBadge(label: string) {
 
 function useTabActive(to: string) {
   const { pathname } = useLocation();
-  const { joinedRoomIds } = useFloor();
-  const roomMatch = pathname.match(/^\/room\/([^/]+)/);
-  const roomId = roomMatch ? decodeURIComponent(roomMatch[1] ?? "") : "";
-  const inRoom = Boolean(roomId);
-  const joined = inRoom && joinedRoomIds.includes(roomId);
-  if (to === "/") return pathname === "/" || pathname === "/chats/new" || (inRoom && !joined);
-  if (to === "/mine") return pathname === "/mine" || (inRoom && joined);
+  if (to === "/") return pathname === "/" || pathname === "/chats/new";
+  if (to === "/mine") return pathname === "/mine";
   if (to === "/msg") return pathname === "/msg" || pathname.startsWith("/msg/");
   return pathname === to;
 }

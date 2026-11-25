@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { backend } from "@/backend";
@@ -21,8 +21,7 @@ import {
 import { useFloor } from "@/hooks/use-floor";
 import { useNow } from "@/hooks/use-now";
 
-export function RoomScreen() {
-  const { roomId = "" } = useParams();
+export function RoomScreen({ roomId, backTo }: { roomId: string; backTo: string }) {
   const { rooms, chatters, usersById, me, joinedRoomIds } = useFloor();
   const room = rooms.find((item) => item.id === roomId);
   const navigate = useNavigate();
@@ -73,11 +72,11 @@ export function RoomScreen() {
   if (!room) {
     return (
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <ChatHeader backTo="/mine" backLabel="My Rooms" title="Room" />
+        <ChatHeader backTo={backTo} backLabel="Back" title="Room" />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
           <p className="text-sm text-muted-foreground">That room isn't here.</p>
           <Button variant="outline" asChild>
-            <Link to="/mine">My Rooms</Link>
+            <Link to={backTo}>Back</Link>
           </Button>
         </div>
       </div>
@@ -89,8 +88,8 @@ export function RoomScreen() {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <ChatHeader
-        backTo={joined ? "/mine" : "/"}
-        backLabel={joined ? "My rooms" : "Chats"}
+        backTo={backTo}
+        backLabel="Back"
         title={room.name}
         subtitle={countLabel}
         onTitle={() => setDetailsOpen(true)}
@@ -186,6 +185,7 @@ export function RoomScreen() {
                 else {
                   toast(`Left ${room.name}`);
                   setDetailsOpen(false);
+                  if (backTo === "/mine") navigate("/mine");
                 }
               }}
             >

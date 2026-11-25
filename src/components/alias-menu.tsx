@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useFloor } from "@/hooks/use-floor";
-import { openLine } from "@/lib/open-line";
+import { openLine, threadPath } from "@/lib/open-line";
 import { useModeration } from "@/hooks/use-moderation";
 
 export function AliasMenu({
@@ -55,7 +55,7 @@ export function AliasMenu({
           <DropdownMenuItem
             onSelect={() => {
               const threadId = openLine(userId);
-              if (threadId) navigate(`/msg/${threadId}`);
+              if (threadId) navigate(threadPath(threadId));
             }}
           >
             Message

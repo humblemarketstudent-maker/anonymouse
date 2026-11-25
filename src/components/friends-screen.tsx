@@ -9,7 +9,7 @@ import { Hashtags } from "@/components/hashtags";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useFloor } from "@/hooks/use-floor";
-import { openLine } from "@/lib/open-line";
+import { openLine, threadPath } from "@/lib/open-line";
 
 export function FriendsScreen() {
   const { directory, friendIds, usersById } = useFloor();
@@ -85,7 +85,7 @@ function FriendRow({ user, friend }: { user: PublicUser; friend: boolean }) {
           className="font-semibold hover:text-primary"
           onClick={() => {
             const threadId = openLine(user.id);
-            if (threadId) navigate(`/msg/${threadId}`);
+            if (threadId) navigate(threadPath(threadId));
           }}
         >
           {user.alias}
@@ -100,7 +100,7 @@ function FriendRow({ user, friend }: { user: PublicUser; friend: boolean }) {
           variant="outline"
           onClick={() => {
             const threadId = openLine(user.id);
-            if (threadId) navigate(`/msg/${threadId}`);
+            if (threadId) navigate(threadPath(threadId));
           }}
         >
           Message

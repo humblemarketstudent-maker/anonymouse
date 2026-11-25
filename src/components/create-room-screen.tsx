@@ -27,7 +27,7 @@ export function CreateRoomScreen() {
       setError(result.error);
       return;
     }
-    navigate(`/room/${result.roomId}`, { replace: true });
+    navigate(`/mine?room=${encodeURIComponent(result.roomId)}`, { replace: true });
   }
 
   return (

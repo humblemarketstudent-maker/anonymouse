@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Flame, Send } from "lucide-react";
 import type { ChatAttachment } from "@/backend/types";
 import { AttachButton, LinkButton, SharePreview } from "@/components/share-controls";
@@ -29,8 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useFloor } from "@/hooks/use-floor";
 import { useNow } from "@/hooks/use-now";
 
-export function ThreadScreen() {
-  const { threadId = "" } = useParams();
+export function ThreadScreen({ threadId }: { threadId: string }) {
   const { threads, messages, me, usersById } = useFloor();
   const thread = threads.find((item) => item.id === threadId);
   const peer = thread ? usersById.get(thread.peerId) : undefined;

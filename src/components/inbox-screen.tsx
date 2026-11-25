@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { Send } from "lucide-react";
 import { toast } from "sonner";
 import { backend } from "@/backend";
 import type { ThreadOrigin } from "@/backend/types";
 import { EmptyState } from "@/components/empty-state";
 import { Persona } from "@/components/persona";
+import { PickPane, SplitView } from "@/components/split-view";
+import { ThreadScreen } from "@/components/thread-screen";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -23,38 +25,36 @@ import { formatChatListTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 export function InboxLayout() {
-  const match = useMatch("/msg/:threadId");
-  const open = Boolean(match);
+  const [params] = useSearchParams();
+  const threadId = params.get("thread") ?? "";
   return (
-    <div className="flex min-h-0 flex-1">
-      <section
-        className={cn(
-          "min-h-0 w-full flex-1 flex-col md:w-[340px] md:flex-none md:border-r",
-          open ? "hidden" : "flex",
-        )}
-      >
-        <header className="shrink-0 px-4 pt-3 pb-2">
-          <h1 className="text-lg font-semibold tracking-tight">MSG</h1>
-          <p className="text-xs text-muted-foreground">Private lines. Messages older than 3 days are removed.</p>
-        </header>
-        <ThreadList />
-      </section>
-      <section className={cn("min-h-0 min-w-0 flex-1 flex-col", open ? "flex" : "hidden md:flex")}>
-        <Outlet />
-      </section>
-    </div>
+    <SplitView
+      open={Boolean(threadId)}
+      list={
+        <>
+          <header className="shrink-0 px-4 pt-3 pb-2">
+            <h1 className="text-lg font-semibold tracking-tight">MSG</h1>
+            <p className="text-xs text-muted-foreground">Private lines. Messages older than 3 days are removed.</p>
+          </header>
+          <ThreadList />
+        </>
+      }
+      panel={
+        threadId ? (
+          <ThreadScreen key={threadId} threadId={threadId} />
+        ) : (
+          <PickPane title="Pick a line" body="Open a conversation, or start one from a room, a friend, or an accepted tap." />
+        )
+      }
+    />
   );
-}
-
-export function InboxHome() {
-  return <EmptyState title="Pick a line" body="Open a conversation, or start one from a room, a friend, or an accepted tap." />;
 }
 
 function ThreadList() {
   const { threads, usersById } = useFloor();
   const now = useNow();
-  const navigate = useNavigate();
-  const open = useMatch("/msg/:threadId");
+  const [params, setParams] = useSearchParams();
+  const openId = params.get("thread");
   const [ending, setEnding] = useState<{ id: string; alias: string; origin: ThreadOrigin } | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
   const [blast, setBlast] = useState("");
@@ -79,7 +79,11 @@ function ThreadList() {
     setEnding(null);
     setPicked((current) => current.filter((id) => id !== endedId));
     toast("Chat ended.");
-    if (open?.params.threadId === endedId) navigate("/msg");
+    if (openId === endedId) {
+      const next = new URLSearchParams(params);
+      next.delete("thread");
+      setParams(next, { replace: true });
+    }
   }
 
   function sendBlast() {
@@ -112,7 +116,7 @@ function ThreadList() {
           {threads.map((thread) => {
             const peer = usersById.get(thread.peerId);
             if (!peer) return null;
-            const active = open?.params.threadId === thread.id;
+            const active = openId === thread.id;
             const unread = thread.unread > 0;
             const checked = selected.includes(thread.id);
             return (
@@ -126,9 +130,15 @@ function ThreadList() {
                       onCheckedChange={(value) => toggle(thread.id, value === true)}
                     />
                   </div>
-                  <NavLink
-                    to={`/msg/${thread.id}`}
-                    className="flex min-w-0 flex-1 items-center gap-3 py-2.5 pr-24 pl-2 hover:bg-muted/60"
+                  <button
+                    type="button"
+                    aria-current={active ? "true" : undefined}
+                    onClick={() => {
+                      const next = new URLSearchParams(params);
+                      next.set("thread", thread.id);
+                      setParams(next);
+                    }}
+                    className="flex min-w-0 flex-1 items-center gap-3 py-2.5 pr-24 pl-2 text-left hover:bg-muted/60"
                   >
                     <Persona label={peer.alias} avatar={peer.avatar} className="size-12 text-base" />
                     <span className="min-w-0 flex-1">
@@ -165,7 +175,7 @@ function ThreadList() {
                         {thread.preview}
                       </span>
                     </span>
-                  </NavLink>
+                  </button>
                   <Button
                     type="button"
                     variant="ghost"

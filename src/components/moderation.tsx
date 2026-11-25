@@ -1,5 +1,5 @@
 import { createContext, useState, type ReactNode } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { backend } from "@/backend";
 import { useFloor } from "@/hooks/use-floor";
@@ -39,7 +39,7 @@ export const ModerationContext = createContext<ModerationApi | null>(null);
 export function ModerationProvider({ children }: { children: ReactNode }) {
   const { usersById, threads } = useFloor();
   const navigate = useNavigate();
-  const location = useLocation();
+  const [params] = useSearchParams();
   const [report, setReport] = useState<ReportTarget | null>(null);
   const [reason, setReason] = useState<(typeof REASONS)[number]>(REASONS[0]);
   const [alsoBlock, setAlsoBlock] = useState(false);
@@ -64,7 +64,7 @@ export function ModerationProvider({ children }: { children: ReactNode }) {
 
   function leaveIfOpen(userId: string) {
     const thread = threads.find((item) => item.peerId === userId);
-    if (thread && location.pathname.includes(thread.id)) navigate("/msg");
+    if (thread && params.get("thread") === thread.id) navigate("/msg");
   }
 
   return (
