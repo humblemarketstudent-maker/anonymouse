@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Flame, Send } from "lucide-react";
 import type { ChatAttachment } from "@/backend/types";
 import { AttachButton, LinkButton, SharePreview } from "@/components/share-controls";
@@ -29,8 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useFloor } from "@/hooks/use-floor";
 import { useNow } from "@/hooks/use-now";
 
-export function ThreadScreen() {
-  const { threadId = "" } = useParams();
+export function ThreadScreen({ threadId, backTo = "/msg" }: { threadId: string; backTo?: string }) {
   const { threads, messages, me, usersById } = useFloor();
   const thread = threads.find((item) => item.id === threadId);
   const peer = thread ? usersById.get(thread.peerId) : undefined;
@@ -59,7 +58,7 @@ export function ThreadScreen() {
   if (!thread || !peer || !me) {
     return (
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <ChatHeader backTo="/msg" backLabel="Back to MSG" title="Message" />
+        <ChatHeader backTo={backTo} backLabel="Back" title="Message" />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
           <p className="text-sm text-muted-foreground">This conversation is gone.</p>
           <Button variant="outline" asChild>
@@ -104,8 +103,8 @@ export function ThreadScreen() {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <ChatHeader
-        backTo="/msg"
-        backLabel="Back to MSG"
+        backTo={backTo}
+        backLabel="Back"
         title={peer.alias}
         avatar={peer.avatar}
         subtitle={fromMatch ? "Match line" : "Direct line"}
@@ -181,9 +180,9 @@ export function ThreadScreen() {
             aria-label={`Message ${peer.alias}`}
             rows={1}
             maxLength={600}
-            className="composer-field max-h-28 min-h-11 w-auto min-w-0 flex-1 resize-none overflow-y-auto rounded-2xl border-transparent bg-secondary px-3 py-2.5 text-base leading-5 field-sizing-fixed"
+            className="composer-field max-h-24 min-h-9 w-auto min-w-0 flex-1 resize-none overflow-y-auto rounded-md border-border bg-background px-2 py-1.5 text-sm leading-5 field-sizing-fixed"
           />
-          <Button type="submit" className="size-11 rounded-full" aria-label="Send">
+          <Button type="submit" className="size-9 rounded-md" aria-label="Send">
             <Send />
           </Button>
         </div>

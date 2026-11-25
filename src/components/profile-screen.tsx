@@ -6,7 +6,7 @@ import { Hashtags } from "@/components/hashtags";
 import { Persona } from "@/components/persona";
 import { Button } from "@/components/ui/button";
 import { useFloor } from "@/hooks/use-floor";
-import { openLine } from "@/lib/open-line";
+import { openLine, threadPath } from "@/lib/open-line";
 
 export function ProfileScreen() {
   const { userId = "" } = useParams();
@@ -53,7 +53,7 @@ export function ProfileScreen() {
               type="button"
               onClick={() => {
                 const threadId = openLine(user.id);
-                if (threadId) navigate(`/msg/${threadId}`);
+                if (threadId) navigate(threadPath(threadId));
               }}
             >
               Message

@@ -35,7 +35,17 @@ export function formatDayLabel(timestamp: number, now: number): string {
     : { month: "short", day: "numeric", year: "numeric" });
 }
 
-/** Clock time on a message bubble, e.g. 2:41 PM. */
+/** Script clock, 24-hour with seconds, e.g. 11:18:51. */
+export function formatScriptTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+}
+
+/** Full date line in a chat script. */
+export function formatScriptDay(timestamp: number): string {
+  return new Date(timestamp).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+}
+
+/** Clock time on a list row, e.g. 2:41 PM. */
 export function formatClock(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }

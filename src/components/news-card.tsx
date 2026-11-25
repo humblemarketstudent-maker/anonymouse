@@ -8,7 +8,7 @@ export function NewsCard({ news, className }: { news: NewsLink; className?: stri
     <a
       href={news.url}
       className={cn(
-        "block rounded-xl border border-border bg-card/80 p-3 text-left transition-colors hover:border-primary/40",
+        "block rounded-md border border-border bg-card/80 p-2 text-left transition-colors hover:border-primary/40",
         className,
       )}
       onClick={(event) => {

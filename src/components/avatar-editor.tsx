@@ -48,7 +48,7 @@ export function AvatarEditor({ avatar, alias }: { avatar?: MouseAvatar | null; a
     <section className="mt-8">
       <h2 className="text-sm font-semibold">Mouse</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Optional. Skip it and the letter mark stays. Tail, ears, and snout follow the skin tone.
+        Optional. Skip it and the letter mark stays. Same sheet style as the floor mice. Tail, ears, and snout follow the skin tone.
       </p>
       <div className="mt-4 flex items-end gap-4">
         <div className="size-40 overflow-hidden rounded-3xl ring-1 ring-border sm:size-48">

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { backend } from "@/backend";
 import { useFloor } from "@/hooks/use-floor";
+import { threadPath } from "@/lib/open-line";
 
 export function FlashRelay() {
   const { flashes, announcement } = useFloor();
@@ -13,12 +14,13 @@ export function FlashRelay() {
     for (const flash of flashes) {
       if (seen.current.has(flash.id)) continue;
       seen.current.add(flash.id);
+      const threadId = flash.threadId;
       toast(flash.title, {
         description: flash.body,
-        action: flash.threadId
+        action: threadId
           ? {
               label: "Open",
-              onClick: () => navigate(`/msg/${flash.threadId}`),
+              onClick: () => navigate(threadPath(threadId)),
             }
           : flash.match
             ? {

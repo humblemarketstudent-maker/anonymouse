@@ -5,15 +5,13 @@ import { ChatsScreen } from "@/components/chats-screen";
 import { CreateRoomScreen } from "@/components/create-room-screen";
 import { FlashRelay } from "@/components/flash-relay";
 import { FriendsScreen } from "@/components/friends-screen";
-import { InboxHome, InboxLayout } from "@/components/inbox-screen";
+import { InboxLayout } from "@/components/inbox-screen";
 import { MatchScreen } from "@/components/match-screen";
 import { MeScreen } from "@/components/me-screen";
 import { MyRoomsScreen } from "@/components/my-rooms-screen";
 import { ProfileScreen } from "@/components/profile-screen";
-import { RoomScreen } from "@/components/room-screen";
 import { SetupScreen } from "@/components/setup-screen";
 import { Shell } from "@/components/shell";
-import { ThreadScreen } from "@/components/thread-screen";
 import { Toaster } from "@/components/ui/sonner";
 import { useFloor } from "@/hooks/use-floor";
 
@@ -38,14 +36,14 @@ function AppOnly({ children }: { children: ReactNode }) {
   return children;
 }
 
-function LegacyRoom() {
+function RoomQueryRedirect() {
   const { roomId = "" } = useParams();
-  return <Navigate to={`/room/${roomId}`} replace />;
+  return <Navigate to={`/?room=${encodeURIComponent(roomId)}`} replace />;
 }
 
-function LegacyThread() {
+function ThreadQueryRedirect() {
   const { threadId = "" } = useParams();
-  return <Navigate to={`/msg/${threadId}`} replace />;
+  return <Navigate to={`/msg?thread=${encodeURIComponent(threadId)}`} replace />;
 }
 
 export default function App() {
@@ -79,20 +77,18 @@ export default function App() {
         >
           <Route index element={<ChatsScreen />} />
           <Route path="chats/new" element={<CreateRoomScreen />} />
-          <Route path="room/:roomId" element={<RoomScreen />} />
+          <Route path="room/:roomId" element={<RoomQueryRedirect />} />
           <Route path="profile/:userId" element={<ProfileScreen />} />
           <Route path="mine" element={<MyRoomsScreen />} />
           <Route path="match" element={<MatchScreen />} />
-          <Route path="msg" element={<InboxLayout />}>
-            <Route index element={<InboxHome />} />
-            <Route path=":threadId" element={<ThreadScreen />} />
-          </Route>
+          <Route path="msg" element={<InboxLayout />} />
+          <Route path="msg/:threadId" element={<ThreadQueryRedirect />} />
           <Route path="friends" element={<FriendsScreen />} />
           <Route path="you" element={<MeScreen />} />
           <Route path="rooms" element={<Navigate to="/mine" replace />} />
-          <Route path="rooms/:roomId" element={<LegacyRoom />} />
+          <Route path="rooms/:roomId" element={<RoomQueryRedirect />} />
           <Route path="inbox" element={<Navigate to="/msg" replace />} />
-          <Route path="inbox/:threadId" element={<LegacyThread />} />
+          <Route path="inbox/:threadId" element={<ThreadQueryRedirect />} />
           <Route path="me" element={<Navigate to="/you" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
