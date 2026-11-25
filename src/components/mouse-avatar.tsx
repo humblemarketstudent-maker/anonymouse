@@ -1,15 +1,110 @@
-import { useId } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
+import cutoutUrl from "@/assets/mouse-cutout.png";
 import type { Build, CountryCode, MouseAvatar as MouseAvatarConfig } from "@/lib/avatar";
 import { FUR_PAINT, SKIN_PAINT, linkedPaint } from "@/lib/avatar";
+import { cutoutMatchesRegions, paintKey, paintPixels, type PaintSpec } from "@/lib/mouse-paint";
+import { mouseRegions } from "@/lib/mouse-regions";
 import { cn } from "@/lib/utils";
 
+/** Cutout placed so the illustrated face lines up with the layer anchors. */
+const CUTOUT = { x: 17, y: -1, width: 133, height: 145 };
 const HEAD = { x: 88, y: 72, r: 30 };
-const TIP = { x: 34, y: 134 };
 
-function torso(build: Build) {
-  if (build === "Chonky") return { cx: 94, cy: 114, rx: 42, ry: 32 };
-  if (build === "Sleek") return { cx: 94, cy: 116, rx: 24, ry: 30 };
-  return { cx: 94, cy: 114, rx: 33, ry: 28 };
+function torso() {
+  return { cx: 88, cy: 116, rx: 32, ry: 22 };
+}
+
+function poseTransform(build: Build) {
+  if (build === "Chonky") return "translate(88 104) scale(1.12 1.06) translate(-88 -104)";
+  if (build === "Sleek") return "translate(88 104) scale(0.88 1.05) translate(-88 -104)";
+  return undefined;
+}
+
+function tailTip(kind: MouseAvatarConfig["tail"]) {
+  if (kind === "Fluffy Bushy") return { x: 50, y: 148 };
+  if (kind === "Braided") return { x: 38, y: 146 };
+  if (kind === "Curled Heart") return { x: 48, y: 140 };
+  if (kind === "Lightning Bolt") return { x: 48, y: 150 };
+  if (kind === "Cybernetic Metal") return { x: 40, y: 138 };
+  return { x: 34, y: 140 };
+}
+
+const paintCache = new Map<string, string>();
+const paintPending = new Map<string, Promise<string>>();
+let cutoutPromise: Promise<HTMLImageElement> | null = null;
+
+function loadCutout() {
+  if (!cutoutPromise) {
+    cutoutPromise = new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("Could not load the mouse artwork."));
+      image.src = cutoutUrl;
+    });
+  }
+  return cutoutPromise;
+}
+
+function renderIllustrated(spec: PaintSpec) {
+  const key = paintKey(spec);
+  const cached = paintCache.get(key);
+  if (cached) return Promise.resolve(cached);
+  const pending = paintPending.get(key);
+  if (pending) return pending;
+  const job = loadCutout().then((image) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return "";
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+    const regions = mouseRegions();
+    if (cutoutMatchesRegions(canvas.width, canvas.height, regions)) {
+      paintPixels(pixels.data, regions, canvas.width, canvas.height, spec);
+      context.putImageData(pixels, 0, 0);
+    }
+    const url = canvas.toDataURL("image/png");
+    paintCache.set(key, url);
+    paintPending.delete(key);
+    return url;
+  });
+  paintPending.set(key, job);
+  return job;
+}
+
+function illustratedSpec(
+  avatar: Pick<MouseAvatarConfig, "fur" | "skin" | "eyes" | "whiskers" | "ears" | "snout" | "markings">,
+): PaintSpec {
+  return {
+    fur: avatar.fur,
+    skin: avatar.skin,
+    hideEyes: avatar.eyes !== "Sleepy Half-Lidded",
+    hideWhiskers: avatar.whiskers !== "Neat Straight",
+    hideEars: avatar.ears !== "Standard Top",
+    hideMouth: avatar.snout !== "Twitchy Pink Nose",
+    siamese: avatar.markings === "Siamese Points",
+  };
+}
+
+function useIllustratedMouse(avatar: MouseAvatarConfig) {
+  const { fur, skin, eyes, whiskers, ears, snout, markings } = avatar;
+  const spec = useMemo(
+    () => illustratedSpec({ fur, skin, eyes, whiskers, ears, snout, markings }),
+    [fur, skin, eyes, whiskers, ears, snout, markings],
+  );
+  const key = paintKey(spec);
+  const [url, setUrl] = useState<string | null>(() => paintCache.get(key) ?? null);
+  useEffect(() => {
+    let cancel = false;
+    void renderIllustrated(spec).then((next) => {
+      if (!cancel && next) setUrl(next);
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [spec]);
+  return url;
 }
 
 function luminance(hex: string): number {
@@ -34,9 +129,11 @@ export function MouseAvatar({
   const fur = FUR_PAINT[avatar.fur];
   const skin = SKIN_PAINT[avatar.skin];
   const linked = linkedPaint(avatar);
-  const body = torso(avatar.build);
+  const body = torso();
   const spot = avatar.fur === "Charcoal Black" ? fur.lite : fur.deep;
-  const whisker = avatar.fur === "Charcoal Black" ? "#e6ebf2" : "#2c3138";
+  const whisker = luminance(fur.main) < 0.35 ? "#e6ebf2" : "#2c3138";
+  const illustrated = useIllustratedMouse(avatar);
+  const pose = poseTransform(avatar.build);
 
   return (
     <svg
@@ -67,55 +164,48 @@ export function MouseAvatar({
         </mask>
       </defs>
       <Background avatar={avatar} id={rawId} />
-      <Tail avatar={avatar} color={linked.tail} deep={skin.deep} />
-      <TailCharm avatar={avatar} />
-      {avatar.outfit === "Oversized Hoodie" ? (
-        <path
-          d="M52 84 C50 36 126 30 128 82"
-          fill="none"
-          stroke="#243044"
-          strokeWidth="18"
-          strokeLinecap="round"
+      <g transform={pose}>
+        <Tail avatar={avatar} color={linked.tail} deep={skin.deep} />
+        <TailCharm avatar={avatar} />
+        {avatar.outfit === "Oversized Hoodie" ? (
+          <path d="M52 84 C50 36 126 30 128 82" fill="none" stroke="#243044" strokeWidth="18" strokeLinecap="round" />
+        ) : null}
+        {avatar.build === "Scruffy" ? <Scruff body={body} color={fur.deep} /> : null}
+        <Ears
+          avatar={avatar}
+          fur={avatar.markings === "Siamese Points" ? spot : fur.main}
+          inner={linked.ears}
+          deep={avatar.markings === "Siamese Points" ? spot : fur.deep}
+          maskId={`${rawId}-notch`}
         />
-      ) : null}
-      <ellipse cx={body.cx} cy={body.cy} rx={body.rx} ry={body.ry} fill={fur.main} stroke={fur.deep} strokeWidth="3" />
-      {avatar.build === "Scruffy" ? <Scruff body={body} color={fur.deep} /> : null}
-      {avatar.markings === "Berkshire Belly" ? (
-        <ellipse cx={body.cx} cy={body.cy + 8} rx={body.rx * 0.62} ry={body.ry * 0.48} fill={fur.lite} />
-      ) : null}
-      {avatar.markings === "Dalmatian Spots" ? <Spots body={body} color={spot} /> : null}
-      <Outfit avatar={avatar} body={body} />
-      <circle cx={HEAD.x} cy={HEAD.y} r={HEAD.r} fill={fur.main} stroke={fur.deep} strokeWidth="3" />
-      {avatar.markings === "Hooded Stripe" ? (
-        <path d={`M${HEAD.x - 10} 48 C${HEAD.x - 6} 70 ${HEAD.x + 4} 90 ${HEAD.x + 2} 108`} fill="none" stroke={spot} strokeWidth="10" strokeLinecap="round" />
-      ) : null}
-      {avatar.markings === "Forehead Blaze" ? (
-        <path d={`M${HEAD.x - 3} 46 C${HEAD.x + 6} 58 ${HEAD.x - 4} 72 ${HEAD.x + 1} 84`} fill="none" stroke={fur.lite} strokeWidth="7" strokeLinecap="round" />
-      ) : null}
-      {avatar.markings === "Dalmatian Spots" ? (
-        <g fill={spot}>
-          <circle cx={HEAD.x - 14} cy={HEAD.y - 8} r="3.2" />
-          <circle cx={HEAD.x + 12} cy={HEAD.y + 4} r="2.4" />
-          <circle cx={HEAD.x + 4} cy={HEAD.y - 16} r="2" />
-        </g>
-      ) : null}
-      <Ears
-        avatar={avatar}
-        fur={avatar.markings === "Siamese Points" ? spot : fur.main}
-        inner={linked.ears}
-        deep={avatar.markings === "Siamese Points" ? spot : fur.deep}
-        maskId={`${rawId}-notch`}
-      />
-      <Neck avatar={avatar} />
-      <Eyes avatar={avatar} fur={fur.main} />
-      <Snout avatar={avatar} fill={linked.snout} nose={linked.nose} />
-      <Whiskers avatar={avatar} color={whisker} />
-      <Glasses avatar={avatar} />
-      <Hat avatar={avatar} />
-      <EarCharm avatar={avatar} />
-      <ellipse cx={body.cx - body.rx * 0.45} cy={body.cy + body.ry * 0.55} rx="7" ry="5" fill={skin.main} />
-      <ellipse cx={body.cx + body.rx * 0.42} cy={body.cy + body.ry * 0.55} rx="7" ry="5" fill={skin.main} />
-      <Prop avatar={avatar} />
+        {illustrated ? <image href={illustrated} x={CUTOUT.x} y={CUTOUT.y} width={CUTOUT.width} height={CUTOUT.height} /> : null}
+        {avatar.markings === "Hooded Stripe" ? (
+          <path d={`M${HEAD.x - 6} 46 C${HEAD.x - 2} 68 ${HEAD.x + 2} 92 ${HEAD.x} 112`} fill="none" stroke={spot} strokeWidth="9" strokeLinecap="round" opacity="0.9" />
+        ) : null}
+        {avatar.markings === "Forehead Blaze" ? (
+          <path d={`M${HEAD.x - 2} 46 C${HEAD.x + 6} 58 ${HEAD.x - 4} 70 ${HEAD.x + 1} 80`} fill="none" stroke={fur.lite} strokeWidth="6" strokeLinecap="round" />
+        ) : null}
+        {avatar.markings === "Dalmatian Spots" ? (
+          <g fill={spot}>
+            <circle cx={HEAD.x - 16} cy={HEAD.y - 6} r="3.2" />
+            <circle cx={HEAD.x + 14} cy={HEAD.y + 2} r="2.4" />
+            <circle cx={HEAD.x + 2} cy={HEAD.y - 16} r="2" />
+          </g>
+        ) : null}
+        {avatar.markings === "Berkshire Belly" ? (
+          <ellipse cx={body.cx} cy={body.cy + 4} rx={body.rx * 0.72} ry={body.ry * 0.62} fill={fur.lite} />
+        ) : null}
+        {avatar.markings === "Dalmatian Spots" ? <Spots body={body} color={spot} /> : null}
+        <Outfit avatar={avatar} body={body} />
+        <Neck avatar={avatar} />
+        <Eyes avatar={avatar} />
+        <Snout avatar={avatar} nose={linked.nose} />
+        <Whiskers avatar={avatar} color={whisker} />
+        <Glasses avatar={avatar} />
+        <Hat avatar={avatar} />
+        <EarCharm avatar={avatar} />
+        <Prop avatar={avatar} />
+      </g>
       <Flag avatar={avatar} clipId={`${rawId}-flag`} />
     </svg>
   );
@@ -239,8 +329,7 @@ function Tail({ avatar, color, deep }: { avatar: MouseAvatarConfig; color: strin
 
 function TailCharm({ avatar }: { avatar: MouseAvatarConfig }) {
   const kind = avatar.tailAccessory;
-  const x = TIP.x;
-  const y = TIP.y;
+  const { x, y } = tailTip(avatar.tail);
   if (kind === "None") return null;
   if (kind === "Silk Ribbon Bow") {
     return (
@@ -403,11 +492,12 @@ function Ears({
   maskId: string;
 }) {
   const kind = avatar.ears;
+  if (kind === "Standard Top") return null;
   if (kind === "Round Dumbo") {
     return (
       <g>
-        <EarBlob cx={52} cy={86} rx={20} ry={20} rot={0} fur={fur} inner={inner} deep={deep} />
-        <EarBlob cx={124} cy={84} rx={20} ry={20} rot={0} fur={fur} inner={inner} deep={deep} />
+        <EarBlob cx={40} cy={76} rx={22} ry={20} rot={-16} fur={fur} inner={inner} deep={deep} />
+        <EarBlob cx={136} cy={74} rx={22} ry={20} rot={16} fur={fur} inner={inner} deep={deep} />
       </g>
     );
   }
@@ -521,20 +611,12 @@ function Neck({ avatar }: { avatar: MouseAvatarConfig }) {
   );
 }
 
-function Eyes({ avatar, fur }: { avatar: MouseAvatarConfig; fur: string }) {
+function Eyes({ avatar }: { avatar: MouseAvatarConfig }) {
   const kind = avatar.eyes;
   const left = { x: 78, y: 68 };
   const right = { x: 100, y: 68 };
+  if (kind === "Sleepy Half-Lidded") return null;
   if (kind === "Ruby Red") return <EyePair left={left} right={right} iris="#9b2335" pupil="#2a0a10" />;
-  if (kind === "Sleepy Half-Lidded") {
-    return (
-      <g>
-        <EyePair left={left} right={right} iris="#1c2128" pupil="#1c2128" />
-        <rect x={left.x - 8} y={left.y - 10} width="16" height="9" fill={fur} />
-        <rect x={right.x - 8} y={right.y - 10} width="16" height="9" fill={fur} />
-      </g>
-    );
-  }
   if (kind === "Anime Sparkle") {
     return (
       <g>
@@ -642,34 +724,32 @@ function Eye({
   );
 }
 
-function Snout({ avatar, fill, nose }: { avatar: MouseAvatarConfig; fill: string; nose: string }) {
+function Snout({ avatar, nose }: { avatar: MouseAvatarConfig; nose: string }) {
   const kind = avatar.snout;
+  if (kind === "Twitchy Pink Nose") return null;
+  const x = HEAD.x;
+  const y = 84;
   return (
     <g>
-      <ellipse cx={HEAD.x} cy={86} rx="16" ry="11" fill={fill} />
-      <ellipse cx={HEAD.x} cy={82} rx="6" ry="4.4" fill={nose} />
-      {kind === "Twitchy Pink Nose" ? (
-        <path d={`M${HEAD.x} 86 v5 M${HEAD.x - 4} 92 Q${HEAD.x} 95 ${HEAD.x + 4} 92`} fill="none" stroke={nose} strokeWidth="1.4" strokeLinecap="round" />
-      ) : null}
       {kind === "Buck Teeth" ? (
         <g>
-          <rect x={HEAD.x - 5} y="90" width="4.5" height="7" rx="1" fill="#f7f4ee" stroke={nose} strokeWidth="0.8" />
-          <rect x={HEAD.x + 0.6} y="90" width="4.5" height="7" rx="1" fill="#f7f4ee" stroke={nose} strokeWidth="0.8" />
+          <rect x={x - 5} y={y} width="4.5" height="8" rx="1" fill="#f7f4ee" stroke={nose} strokeWidth="0.8" />
+          <rect x={x + 0.6} y={y} width="4.5" height="8" rx="1" fill="#f7f4ee" stroke={nose} strokeWidth="0.8" />
         </g>
       ) : null}
       {kind === "Cheeky Smirk" ? (
-        <path d={`M${HEAD.x - 2} 90 Q${HEAD.x + 6} 96 ${HEAD.x + 10} 88`} fill="none" stroke={nose} strokeWidth="1.6" strokeLinecap="round" />
+        <path d={`M${x - 6} ${y} Q${x + 4} ${y + 8} ${x + 10} ${y - 1}`} fill="none" stroke={nose} strokeWidth="1.8" strokeLinecap="round" />
       ) : null}
       {kind === "Tiny Fangs" ? (
         <g fill="#f7f4ee" stroke={nose} strokeWidth="0.6">
-          <polygon points={`${HEAD.x - 5},90 ${HEAD.x - 2},90 ${HEAD.x - 3.5},96`} />
-          <polygon points={`${HEAD.x + 2},90 ${HEAD.x + 5},90 ${HEAD.x + 3.5},96`} />
+          <polygon points={`${x - 5},${y} ${x - 2},${y} ${x - 3.5},${y + 7}`} />
+          <polygon points={`${x + 2},${y} ${x + 5},${y} ${x + 3.5},${y + 7}`} />
         </g>
       ) : null}
       {kind === "Nose Bandage" ? (
         <g>
-          <rect x={HEAD.x - 9} y="79" width="18" height="7" rx="2" fill="#f4efe6" stroke="#e0d5c4" strokeWidth="0.8" />
-          <path d={`M${HEAD.x - 4} 79 v7 M${HEAD.x + 4} 79 v7`} stroke="#e0d5c4" strokeWidth="0.8" />
+          <rect x={x - 10} y={y - 12} width="20" height="8" rx="2" fill="#f4efe6" stroke="#e0d5c4" strokeWidth="0.8" />
+          <path d={`M${x - 4} ${y - 12} v8 M${x + 4} ${y - 12} v8`} stroke="#e0d5c4" strokeWidth="0.8" />
         </g>
       ) : null}
     </g>
@@ -678,7 +758,7 @@ function Snout({ avatar, fill, nose }: { avatar: MouseAvatarConfig; fill: string
 
 function Whiskers({ avatar, color }: { avatar: MouseAvatarConfig; color: string }) {
   const kind = avatar.whiskers;
-  const y = 86;
+  const y = 78;
   const left = HEAD.x - 16;
   const right = HEAD.x + 16;
   if (kind === "Long Droopy") {
@@ -734,16 +814,7 @@ function Whiskers({ avatar, color }: { avatar: MouseAvatarConfig; color: string 
       </g>
     );
   }
-  return (
-    <g fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round">
-      <path d={`M${left} ${y - 3} H${left - 18}`} />
-      <path d={`M${left} ${y + 2} H${left - 20}`} />
-      <path d={`M${left} ${y + 6} H${left - 14}`} />
-      <path d={`M${right} ${y - 3} H${right + 18}`} />
-      <path d={`M${right} ${y + 2} H${right + 20}`} />
-      <path d={`M${right} ${y + 6} H${right + 14}`} />
-    </g>
-  );
+  return null;
 }
 
 function Glasses({ avatar }: { avatar: MouseAvatarConfig }) {
@@ -903,8 +974,8 @@ function EarCharm({ avatar }: { avatar: MouseAvatarConfig }) {
 function Prop({ avatar }: { avatar: MouseAvatarConfig }) {
   const kind = avatar.prop;
   if (kind === "None") return null;
-  const x = 126;
-  const y = 118;
+  const x = 112;
+  const y = 90;
   if (kind === "Swiss Cheese Wedge") {
     return (
       <g>
@@ -962,7 +1033,7 @@ function Prop({ avatar }: { avatar: MouseAvatarConfig }) {
 function Flag({ avatar, clipId }: { avatar: MouseAvatarConfig; clipId: string }) {
   if (avatar.flag === "None") return null;
   return (
-    <g transform="translate(8 58)">
+    <g transform="translate(4 78)">
       <line x1="2" y1="0" x2="2" y2="56" stroke="#c4b59a" strokeWidth="2.4" strokeLinecap="round" />
       <circle cx="2" cy="0" r="2.3" fill="#e0b44a" />
       <g transform="translate(4 2)" clipPath={`url(#${clipId})`}>
