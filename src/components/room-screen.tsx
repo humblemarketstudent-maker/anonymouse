@@ -83,7 +83,7 @@ export function RoomScreen({ roomId, backTo }: { roomId: string; backTo: string 
     );
   }
 
-  const countLabel = `${people.length} in this room`;
+  const countLabel = `${room.listeners} ${room.listeners === 1 ? "user" : "users"}`;
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">

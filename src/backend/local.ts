@@ -29,6 +29,7 @@ import {
   SEAT_THREADS,
   SEED_CHATTERS,
   SEED_ROOMS,
+  HEAT_FILL,
   SEEDED_FRIENDS,
   SEEDED_INCOMING,
   SEEDED_ROOMS,
@@ -59,6 +60,8 @@ interface ThreadRec {
   origin: ThreadOrigin;
   updatedAt: number;
   unread: number;
+  /** User ids who keep this chat on their MSG list after it goes quiet. */
+  keptBy: string[];
 }
 
 interface NotificationRec extends AppNotification {
@@ -296,6 +299,9 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       if (next.sessionUserId && !next.accounts.some((account) => account.userId === next.sessionUserId)) {
         next.sessionUserId = null;
       }
+      for (const thread of next.threads) {
+        if (!Array.isArray(thread.keptBy)) thread.keptBy = [];
+      }
       const delta = now() - (parsed.savedAt ?? now());
       if (delta > 2000) {
         for (const tap of next.taps) {
@@ -328,6 +334,20 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       if (item.newsIndex != null && NEWS_ITEMS[item.newsIndex]) chatter.news = NEWS_ITEMS[item.newsIndex];
       return [chatter];
     });
+    for (const fill of HEAT_FILL) {
+      if (!roomIds.has(fill.roomId)) continue;
+      fill.bodies.forEach((body, index) => {
+        const author = MOCK_USERS[index % MOCK_USERS.length];
+        if (!author) return;
+        chatters.push({
+          id: `heat_${fill.roomId}_${index}`,
+          authorId: author.id,
+          roomId: fill.roomId,
+          body,
+          createdAt: clock - (3 + index) * 60_000,
+        });
+      });
+    }
     return {
       accounts: MOCK_USERS.map((user) => ({
         userId: user.id,
@@ -546,14 +566,21 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
           .filter((thread) => thread.a === profile.id || thread.b === profile.id)
           .map((thread) => ({ thread, peerId: thread.a === profile.id ? thread.b : thread.a }))
           .filter(({ peerId }) => !blocked.has(peerId))
-          .map(({ thread, peerId }) => ({
-            id: thread.id,
-            peerId,
-            origin: thread.origin,
-            updatedAt: thread.updatedAt,
-            unread: thread.unread,
-            preview: previewOf(thread.id),
-          }))
+          .filter(({ thread }) => threadIsListed(thread, profile.id))
+          .map(({ thread, peerId }) => {
+            const permanent = thread.keptBy.includes(profile.id);
+            const preview =
+              permanent && !hasVisibleMessage(thread.id) ? "No messages in the last 3 days" : previewOf(thread.id);
+            return {
+              id: thread.id,
+              peerId,
+              origin: thread.origin,
+              updatedAt: thread.updatedAt,
+              unread: thread.unread,
+              preview,
+              permanent,
+            };
+          })
           .sort((a, b) => b.updatedAt - a.updatedAt)
       : [];
     const visibleIds = new Set(threads.map((thread) => thread.id));
@@ -634,6 +661,16 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     return parts.filter((part): part is string => !!part).join("\n");
   }
 
+  /** Permanent chats stay on MSG. Others leave after 3 days without activity. */
+  function threadIsListed(thread: ThreadRec, userId: string): boolean {
+    if (thread.keptBy.includes(userId)) return true;
+    return now() - thread.updatedAt <= MESSAGE_TTL_MS;
+  }
+
+  function hasVisibleMessage(threadId: string): boolean {
+    return state.messages.some((message) => message.threadId === threadId && messageVisible(message));
+  }
+
   function messageVisible(message: DirectMessage): boolean {
     if (message.createdAt < now() - MESSAGE_TTL_MS) return false;
     const haystack = contactHaystack([message.body, message.news?.url, message.news?.title, message.news?.summary]);
@@ -706,7 +743,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
   function ensureThread(a: string, b: string, origin: ThreadOrigin): ThreadRec {
     const found = findThread(a, b);
     if (found) return found;
-    const thread: ThreadRec = { id: uid("thr"), a, b, origin, updatedAt: now(), unread: 0 };
+    const thread: ThreadRec = { id: uid("thr"), a, b, origin, updatedAt: now(), unread: 0, keptBy: [] };
     state.threads.push(thread);
     return thread;
   }
@@ -1331,6 +1368,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       if (!peer) return { ok: false, error: "That alias isn't here." };
       if (isBlocked(profile.id, peerId)) return { ok: false, error: "Unblock this alias before you message them." };
       const thread = ensureThread(profile.id, peerId, "direct");
+      if (!threadIsListed(thread, profile.id)) thread.updatedAt = now();
       emit();
       return { ok: true, threadId: thread.id };
     },
@@ -1342,6 +1380,20 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       const result = closePrivateThread(threadId);
       if (result.ok) emit();
       return result;
+    },
+    setThreadPermanent(threadId, permanent) {
+      const profile = me();
+      if (!profile) return { ok: false, error: "Sign in first." };
+      const thread = state.threads.find((item) => item.id === threadId);
+      if (!thread || (thread.a !== profile.id && thread.b !== profile.id)) {
+        return { ok: false, error: "That conversation is gone." };
+      }
+      const kept = new Set(thread.keptBy);
+      if (permanent) kept.add(profile.id);
+      else kept.delete(profile.id);
+      thread.keptBy = [...kept];
+      emit();
+      return { ok: true };
     },
     endMatch(threadId) {
       const profile = me();

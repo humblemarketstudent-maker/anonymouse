@@ -84,6 +84,8 @@ export interface ThreadSummary {
   updatedAt: number;
   unread: number;
   preview: string;
+  /** Stays on the MSG list after the 3-day history purge. Messages still expire. */
+  permanent: boolean;
 }
 
 export interface DirectMessage {
@@ -190,6 +192,8 @@ export interface Backend {
   burnThread(threadId: string): void;
   /** Close a private conversation for this user and drop it from MSG. */
   endChat(threadId: string): Result;
+  /** Keep a 1:1 chat on the MSG list. History still expires after 3 days. */
+  setThreadPermanent(threadId: string, permanent: boolean): Result;
   endMatch(threadId: string): Result;
   addFriend(userId: string): Result;
   removeFriend(userId: string): void;

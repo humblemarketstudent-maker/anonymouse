@@ -12,7 +12,7 @@ import { useFloor } from "@/hooks/use-floor";
 import { openLine, threadPath } from "@/lib/open-line";
 
 export function FriendsScreen() {
-  const { directory, friendIds, usersById } = useFloor();
+  const { friendIds, usersById } = useFloor();
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase().replace(/^#/, "");
   const matches = (user: PublicUser) =>
@@ -25,48 +25,35 @@ export function FriendsScreen() {
     .map((id) => usersById.get(id))
     .filter((user): user is PublicUser => !!user)
     .filter(matches);
-  const others = directory.filter((user) => !friendIds.includes(user.id) && matches(user));
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <header className="px-4 pt-4 pb-3">
         <h1 className="text-lg font-semibold tracking-tight">Friends</h1>
         <p className="text-sm text-muted-foreground">
-          Adding a friend is separate from a Match tap. Friends can be messaged directly and included on a blast.
+          Friends you added. This is separate from a Match tap. Message them directly, or include them on a blast.
         </p>
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Alias, quote, or #hashtag"
-          aria-label="Find an alias"
+          aria-label="Find a friend"
           className="mt-3 h-10"
         />
       </header>
-      <section className="px-4 pb-2">
-        <h2 className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Your friends</h2>
-      </section>
       {friends.length === 0 ? (
         q && friendIds.length > 0 ? (
-          <p className="px-4 pb-2 text-sm text-muted-foreground">No friends match that search.</p>
+          <p className="px-4 pb-8 text-sm text-muted-foreground">No friends match that search.</p>
         ) : (
-          <EmptyState title="No friends yet" body="Add someone from their profile in a room, a conversation, or the list below." />
+          <EmptyState
+            title="No friends yet"
+            body="Add someone from their profile in a room, a conversation, or Match."
+          />
         )
       ) : (
-        <ul>
-          {friends.map((user) => (
-            <FriendRow key={user.id} user={user} friend />
-          ))}
-        </ul>
-      )}
-      <section className="px-4 pt-6 pb-2">
-        <h2 className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">Everyone else</h2>
-      </section>
-      {others.length === 0 ? (
-        <p className="px-4 pb-8 text-sm text-muted-foreground">No aliases match.</p>
-      ) : (
         <ul className="pb-6">
-          {others.map((user) => (
-            <FriendRow key={user.id} user={user} friend={false} />
+          {friends.map((user) => (
+            <FriendRow key={user.id} user={user} />
           ))}
         </ul>
       )}
@@ -74,11 +61,11 @@ export function FriendsScreen() {
   );
 }
 
-function FriendRow({ user, friend }: { user: PublicUser; friend: boolean }) {
+function FriendRow({ user }: { user: PublicUser }) {
   const navigate = useNavigate();
   return (
     <li className="flex items-start gap-3 border-b border-border px-4 py-3">
-      {user.avatar ? <Persona label={user.alias} avatar={user.avatar} className="mt-0.5 size-10" /> : null}
+      <Persona label={user.alias} avatar={user.avatar} className="mt-0.5 size-10" />
       <div className="min-w-0 flex-1">
         <button
           type="button"
@@ -108,19 +95,13 @@ function FriendRow({ user, friend }: { user: PublicUser; friend: boolean }) {
         <Button
           type="button"
           size="sm"
-          variant={friend ? "ghost" : "secondary"}
+          variant="ghost"
           onClick={() => {
-            if (friend) {
-              backend.removeFriend(user.id);
-              toast("Removed from Friends");
-              return;
-            }
-            const result = backend.addFriend(user.id);
-            if (!result.ok) toast.error(result.error);
-            else toast(`${user.alias} is in Friends`);
+            backend.removeFriend(user.id);
+            toast("Removed from Friends");
           }}
         >
-          {friend ? "Remove" : "Add"}
+          Remove
         </Button>
       </div>
     </li>
