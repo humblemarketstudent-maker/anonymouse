@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useLocation, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { Send } from "lucide-react";
 import { toast } from "sonner";
 import { backend } from "@/backend";
@@ -26,18 +26,17 @@ import { useNow } from "@/hooks/use-now";
 import { formatChatListTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
-type Scope = "all" | "joined";
+type Scope = "joined" | "people";
 
 export function DeskScreen({ scope }: { scope: Scope }) {
   const [params] = useSearchParams();
-  const { pathname } = useLocation();
-  const roomId = params.get("room") ?? "";
-  const threadId = params.get("thread") ?? "";
+  const roomId = scope === "joined" ? (params.get("room") ?? "") : "";
+  const threadId = scope === "people" ? (params.get("thread") ?? "") : "";
   const open = Boolean(roomId || threadId);
   const back = new URLSearchParams(params);
   back.delete("room");
   back.delete("thread");
-  const path = scope === "joined" ? "/mine" : pathname.startsWith("/msg") ? "/msg" : "/";
+  const path = scope === "joined" ? "/mine" : "/msg";
   const query = back.toString();
   const backTo = query ? `${path}?${query}` : path;
 
@@ -51,7 +50,14 @@ export function DeskScreen({ scope }: { scope: Scope }) {
         ) : roomId ? (
           <RoomScreen key={roomId} roomId={roomId} backTo={backTo} />
         ) : (
-          <PickPane title="Pick a chat" body="Rooms and people sit in the same list. The script opens on the right." />
+          <PickPane
+            title={scope === "joined" ? "Pick a room" : "Pick a person"}
+            body={
+              scope === "joined"
+                ? "Rooms you joined. The script opens on the right."
+                : "Private lines only. Rooms stay in Chats. The script opens on the right."
+            }
+          />
         )
       }
     />
@@ -63,7 +69,6 @@ function DeskList({ scope }: { scope: Scope }) {
   const now = useNow();
   const [params, setParams] = useSearchParams();
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<"all" | "rooms" | "people">(scope === "joined" ? "rooms" : "all");
   const [picked, setPicked] = useState<string[]>([]);
   const [blast, setBlast] = useState("");
   const [blastError, setBlastError] = useState<string | null>(null);
@@ -73,12 +78,13 @@ function DeskList({ scope }: { scope: Scope }) {
   const term = query.trim().toLowerCase();
 
   const roomRows = useMemo(() => {
-    const source = scope === "joined" ? rooms.filter((room) => joinedRoomIds.includes(room.id)) : rooms;
+    if (scope !== "joined") return [];
+    const source = rooms.filter((room) => joinedRoomIds.includes(room.id));
     return source.filter((room) => !term || room.name.toLowerCase().includes(term) || room.hashtags.some((tag) => tag.includes(term)));
   }, [rooms, joinedRoomIds, scope, term]);
 
   const people = useMemo(() => {
-    if (scope === "joined") return [];
+    if (scope !== "people") return [];
     return threads
       .map((thread) => {
         const peer = usersById.get(thread.peerId);
@@ -88,8 +94,8 @@ function DeskList({ scope }: { scope: Scope }) {
       .filter((item) => !term || item.peer.alias.toLowerCase().includes(term));
   }, [threads, usersById, scope, term]);
 
-  const showRooms = filter !== "people";
-  const showPeople = filter !== "rooms" && scope !== "joined";
+  const showRooms = scope === "joined";
+  const showPeople = scope === "people";
 
   function select(kind: "room" | "thread", id: string) {
     const next = new URLSearchParams(params);
@@ -112,7 +118,7 @@ function DeskList({ scope }: { scope: Scope }) {
 
   function sendBlast() {
     const threadIds = picked.filter((id) => threads.some((thread) => thread.id === id));
-    const roomIds = picked.filter((id) => rooms.some((room) => room.id === id));
+    const roomIds = scope === "people" ? [] : picked.filter((id) => rooms.some((room) => room.id === id));
     if (threadIds.length === 0 && roomIds.length === 0) {
       setBlastError("Select at least one chat.");
       return;
@@ -134,7 +140,7 @@ function DeskList({ scope }: { scope: Scope }) {
     const count = threadIds.length + roomIds.length;
     setBlast("");
     setBlastError(null);
-    setPicked([]);
+    if (scope !== "people") setPicked([]);
     toast.success(`Blasted to ${count}`);
   }
 
@@ -159,31 +165,19 @@ function DeskList({ scope }: { scope: Scope }) {
   return (
     <>
       <header className="shrink-0 border-b px-3 pt-3 pb-2">
-        <h1 className="text-sm font-semibold tracking-tight">{scope === "joined" ? "My Rooms" : "Chats"}</h1>
+        <h1 className="text-sm font-semibold tracking-tight">{scope === "joined" ? "My Rooms" : "MSG"}</h1>
+        {scope === "people" ? (
+          <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+            People only. Checked rows stay checked after a blast. Keep a chat to leave it on this list.
+          </p>
+        ) : null}
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Find chats"
-          aria-label="Find chats"
+          placeholder={scope === "people" ? "Find a person" : "Find a room"}
+          aria-label={scope === "people" ? "Find a person" : "Find a room"}
           className="mt-2 h-8 rounded-md text-sm"
         />
-        {scope === "joined" ? null : (
-          <div className="mt-2 flex gap-1">
-            {(["all", "rooms", "people"] as const).map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => setFilter(item)}
-                className={cn(
-                  "rounded-md px-2 py-1 text-[11px] font-medium tracking-wide uppercase",
-                  filter === item ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {item}
-              </button>
-            ))}
-          </div>
-        )}
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {showRooms ? (
@@ -254,7 +248,7 @@ function DeskList({ scope }: { scope: Scope }) {
         ) : null}
         {showPeople ? (
           <section>
-            <p className="px-3 pt-3 pb-1 text-[10px] font-semibold tracking-[0.16em] text-muted-foreground uppercase">People</p>
+            <p className="px-3 pt-2 pb-1 text-[10px] font-semibold tracking-[0.16em] text-muted-foreground uppercase">People</p>
             {people.length === 0 ? (
               <EmptyState title="No people" body="Open a line from a room, a friend, or an accepted tap." />
             ) : (
@@ -264,36 +258,58 @@ function DeskList({ scope }: { scope: Scope }) {
                   const checked = picked.includes(thread.id);
                   return (
                     <li key={thread.id} className={cn("border-b border-border/70", active && "bg-primary/10")}>
-                      <div className="flex items-center">
-                        <div className="pl-2">
+                      <div className="flex items-start">
+                        <div className="pt-3 pl-2">
                           <Checkbox
                             checked={checked}
                             aria-label={`Select chat with ${peer.alias}`}
                             onCheckedChange={(value) => toggle(thread.id, value === true)}
                           />
                         </div>
-                        <button type="button" onClick={() => select("thread", thread.id)} className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left">
-                          <Persona label={peer.alias} avatar={peer.avatar} className="size-8 text-xs" />
-                          <span className="min-w-0 flex-1">
-                            <span className="flex items-baseline gap-2">
-                              <span className={cn("truncate text-sm", thread.unread ? "font-semibold" : "font-medium")}>{peer.alias}</span>
-                              <time className="ml-auto shrink-0 text-[10px] text-muted-foreground tabular-nums">
-                                {formatChatListTime(thread.updatedAt, now)}
-                              </time>
+                        <div className="min-w-0 flex-1">
+                          <button type="button" onClick={() => select("thread", thread.id)} className="flex w-full min-w-0 items-center gap-2 px-2 pt-2 text-left">
+                            <Persona label={peer.alias} avatar={peer.avatar} className="size-8 text-xs" />
+                            <span className="min-w-0 flex-1">
+                              <span className="flex items-baseline gap-2">
+                                <span className={cn("truncate text-sm", thread.unread ? "font-semibold" : "font-medium")}>{peer.alias}</span>
+                                <time className="ml-auto shrink-0 text-[10px] text-muted-foreground tabular-nums">
+                                  {formatChatListTime(thread.updatedAt, now)}
+                                </time>
+                              </span>
+                              <span className="block truncate text-xs text-muted-foreground">{thread.preview}</span>
                             </span>
-                            <span className="block truncate text-xs text-muted-foreground">{thread.preview}</span>
-                          </span>
-                        </button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="mr-1 h-7 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-                          aria-label={`End chat with ${peer.alias}`}
-                          onClick={() => setEnding({ id: thread.id, alias: peer.alias, origin: thread.origin })}
-                        >
-                          End
-                        </Button>
+                          </button>
+                          <div className="flex justify-end gap-1 pr-1 pb-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              aria-pressed={thread.permanent}
+                              aria-label={
+                                thread.permanent
+                                  ? `Permanent chat with ${peer.alias}. Messages still expire after 3 days.`
+                                  : `Make chat with ${peer.alias} permanent`
+                              }
+                              className={cn("h-7 px-2 text-xs", thread.permanent ? "text-primary" : "text-muted-foreground")}
+                              onClick={() => {
+                                const result = backend.setThreadPermanent(thread.id, !thread.permanent);
+                                if (!result.ok) toast.error(result.error);
+                              }}
+                            >
+                              {thread.permanent ? "Permanent" : "Keep"}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              aria-label={`End chat with ${peer.alias}`}
+                              onClick={() => setEnding({ id: thread.id, alias: peer.alias, origin: thread.origin })}
+                            >
+                              End
+                            </Button>
+                          </div>
+                        </div>
                       </div>
                     </li>
                   );
@@ -311,7 +327,11 @@ function DeskList({ scope }: { scope: Scope }) {
         }}
       >
         <p className="px-1 pb-1 text-[10px] text-muted-foreground">
-          {picked.length === 0 ? "Check chats, then blast one note." : `Blast to ${picked.length}.`}
+          {picked.length === 0
+            ? scope === "people"
+              ? "Check people, then blast one note. They stay checked."
+              : "Check chats, then blast one note."
+            : `Blast to ${picked.length}.`}
         </p>
         <div className="flex items-end gap-1.5">
           <Textarea

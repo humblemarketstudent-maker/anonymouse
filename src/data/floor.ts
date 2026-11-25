@@ -134,15 +134,15 @@ export const SEED_CHATTERS: SeedChatter[] = [
   { alias: "VolSmile", minutesAgo: 12, roomId: "room_market", body: "Implied is asleep. Realized will not be." },
   { alias: "MacroMouse", minutesAgo: 35, roomId: "room_market", body: "The dollar is the tell. Everything else is narrating it.", newsIndex: 0 },
   { alias: "SpreadSurgeon", minutesAgo: 8, roomId: "room_deals", body: "The book is covered the way a winter coat is covered: technically." },
-  { alias: "DryPowder", minutesAgo: 33, roomId: "room_deals", body: "We're through the memo. The memo is optimistic. The data room is the product." },
+  { alias: "DryPowder", minutesAgo: 2000, roomId: "room_deals", body: "We're through the memo. The memo is optimistic. The data room is the product." },
   { alias: "YieldHunter", minutesAgo: 21, roomId: "room_rates", body: "Someone asked for uncorrelated yield again. I sent bills and a glass of water.", newsIndex: 1 },
   { alias: "WealthWarden", minutesAgo: 40, roomId: "room_rates", body: "Nobody wants the long bond until the day they all want it." },
   { alias: "AlphaWidow", minutesAgo: 18, roomId: "room_after", body: "Print beat, price faded. That's the only tell I needed." },
   { alias: "RetailRadar", minutesAgo: 55, roomId: "room_after", body: "Everyone is a long-term thinker until the after-hours candle." },
   { alias: "AlloyHours", minutesAgo: 9, roomId: "room_builders", body: "Shipped the ugly version. The pretty one was a meeting." },
   { alias: "FlowDesk", minutesAgo: 26, roomId: "room_builders", body: "The take rate is the hero slide. The failure cost is an appendix." },
-  { alias: "KeelSong", minutesAgo: 6, roomId: "room_night", body: "If you're here, the honest version of the day is still available." },
-  { alias: "InkMargin", minutesAgo: 28, roomId: "room_night", body: "Cut the first sentence. It was warming up. The second one is the note." },
+  { alias: "KeelSong", minutesAgo: 1800, roomId: "room_night", body: "If you're here, the honest version of the day is still available." },
+  { alias: "InkMargin", minutesAgo: 2200, roomId: "room_night", body: "Cut the first sentence. It was warming up. The second one is the note." },
   { alias: "GridMouse", minutesAgo: 14, roomId: "room_city", body: "The good block is the one that doesn't ask you to perform your job." },
   { alias: "HarborKid", minutesAgo: 48, roomId: "room_city", body: "Three weeks in and I still pick the cafe by how quiet the wifi is." },
   { alias: "ByteBaker", minutesAgo: 11, roomId: "room_source", body: "The issue is older than the intern who just offered to fix it. Let them." },
@@ -153,10 +153,10 @@ export const SEED_CHATTERS: SeedChatter[] = [
   { alias: "PineSignal", minutesAgo: 50, roomId: "room_climate", body: "I went outside instead of refreshing. The forecast was worse. The walk was better." },
   { alias: "TermSheet", minutesAgo: 15, roomId: "room_founders", body: "Founder wants last cycle's multiple on this cycle's growth. We wished them a very nice process." },
   { alias: "MintedLP", minutesAgo: 42, roomId: "room_founders", body: "We're tracking closely, which is how this room says no." },
-  { alias: "FolioFox", minutesAgo: 7, roomId: "room_library", body: "The paragraph I underlined isn't the famous one. That's usually the sign." },
-  { alias: "ReelQuiet", minutesAgo: 31, roomId: "room_library", body: "Watched it silent. The cut still worked. The dialogue was doing too much." },
-  { alias: "LBOLunch", minutesAgo: 10, roomId: "room_kitchen", body: "Onions, late, and no opinions. This is the best meeting of the day." },
-  { alias: "ByteBaker", minutesAgo: 36, roomId: "room_kitchen", body: "The tart is the only deploy I trust on a Friday." },
+  { alias: "FolioFox", minutesAgo: 1900, roomId: "room_library", body: "The paragraph I underlined isn't the famous one. That's usually the sign." },
+  { alias: "ReelQuiet", minutesAgo: 2500, roomId: "room_library", body: "Watched it silent. The cut still worked. The dialogue was doing too much." },
+  { alias: "LBOLunch", minutesAgo: 2000, roomId: "room_kitchen", body: "Onions, late, and no opinions. This is the best meeting of the day." },
+  { alias: "ByteBaker", minutesAgo: 2600, roomId: "room_kitchen", body: "The tart is the only deploy I trust on a Friday." },
   { alias: "LoomLight", minutesAgo: 8, roomId: "room_design", body: "If the empty space is nervous, the type is too loud. Pull both back." },
   { alias: "KilnMouse", minutesAgo: 29, roomId: "room_design", body: "Made a cup badly on purpose. The screen I shipped this morning was worse." },
   { alias: "GammaGarden", minutesAgo: 12, roomId: "room_quant", body: "Short gamma into a number is a personality. I'm flat, which is how I stay here." },
@@ -165,12 +165,38 @@ export const SEED_CHATTERS: SeedChatter[] = [
   { alias: "StableSally", minutesAgo: 27, roomId: "room_crypto", body: "If the peg sneezes I am already gone. The yield is not worth the group chat." },
   { alias: "HarborKid", minutesAgo: 16, roomId: "room_new", body: "Does anyone know a quiet room that isn't a coworking ad?" },
   { alias: "LaneChange", minutesAgo: 39, roomId: "room_new", body: "Run the new city before you judge it. Maps lie. Hills don't." },
-  { alias: "CivicMouse", minutesAgo: 11, roomId: "room_policy", body: "The footnote moved more money than the press release. Read the footnote." },
-  { alias: "OathDraft", minutesAgo: 34, roomId: "room_policy", body: "The clause everyone skipped is the one that will matter in June." },
-  { alias: "KeelSong", minutesAgo: 8, roomId: "room_music", body: "Played it twice. The second time I stopped checking who else was in the room." },
-  { alias: "ReelQuiet", minutesAgo: 25, roomId: "room_music", body: "The bridge is the only honest part. Everything before it is introduction." },
+  { alias: "CivicMouse", minutesAgo: 1700, roomId: "room_policy", body: "The footnote moved more money than the press release. Read the footnote." },
+  { alias: "OathDraft", minutesAgo: 2300, roomId: "room_policy", body: "The clause everyone skipped is the one that will matter in June." },
+  { alias: "KeelSong", minutesAgo: 1600, roomId: "room_music", body: "Played it twice. The second time I stopped checking who else was in the room." },
+  { alias: "ReelQuiet", minutesAgo: 2100, roomId: "room_music", body: "The bridge is the only honest part. Everything before it is introduction." },
   { alias: "SparkShift", minutesAgo: 6, roomId: "room_ai", body: "The model was confident and wrong in a way a junior would be embarrassed by." },
   { alias: "NovaChart", minutesAgo: 22, roomId: "room_ai", body: "Useful as a draft. Dangerous as a witness. I keep it in the first role." },
+];
+
+/** Extra recent lines so the room list shows more than one heat level. */
+export const HEAT_FILL: { roomId: string; bodies: string[] }[] = [
+  {
+    roomId: "room_market",
+    bodies: [
+      "The second print didn't change the read.",
+      "Breadth is still the quiet part of the open.",
+      "I'm flat the names everyone is narrating.",
+      "Realized is awake. Implied is late.",
+      "That's the fifth check. Same tape.",
+    ],
+  },
+  {
+    roomId: "room_ai",
+    bodies: [
+      "Asked for the counterargument. Got a compliment.",
+      "The draft is useful. The citation is not.",
+      "I kept the paragraph and deleted the confidence.",
+    ],
+  },
+  {
+    roomId: "room_builders",
+    bodies: ["Shipped the smaller one. The meeting can have the rest."],
+  },
 ];
 
 export interface LiveLine {

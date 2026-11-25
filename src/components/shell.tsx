@@ -16,8 +16,8 @@ import { cn } from "@/lib/utils";
 
 const LINKS = [
   { to: "/", label: "Chats", icon: Hash, end: true },
-  { to: "/mine", label: "My Rooms", icon: Bookmark, end: true },
   { to: "/match", label: "Match", icon: Sparkles, end: true },
+  { to: "/mine", label: "My Rooms", icon: Bookmark, end: true },
   { to: "/msg", label: "MSG", icon: Inbox, end: false },
   { to: "/friends", label: "Friends", icon: Users, end: true },
   { to: "/you", label: "You", icon: CircleUserRound, end: true },

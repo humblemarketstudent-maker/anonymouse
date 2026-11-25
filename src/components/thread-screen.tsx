@@ -28,6 +28,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useFloor } from "@/hooks/use-floor";
 import { useNow } from "@/hooks/use-now";
+import { cn } from "@/lib/utils";
 
 export function ThreadScreen({ threadId, backTo = "/msg" }: { threadId: string; backTo?: string }) {
   const { threads, messages, me, usersById } = useFloor();
@@ -127,6 +128,28 @@ export function ThreadScreen({ threadId, backTo = "/msg" }: { threadId: string; 
           </AliasMenu>
         }
       />
+      <button
+        type="button"
+        aria-pressed={thread.permanent}
+        onClick={() => {
+          const result = backend.setThreadPermanent(thread.id, !thread.permanent);
+          if (!result.ok) {
+            toast.error(result.error);
+            return;
+          }
+          toast(thread.permanent ? "This chat can leave MSG again." : "This chat stays in MSG.");
+        }}
+        className="flex w-full items-center justify-between gap-3 border-b px-3 py-2 text-left text-xs"
+      >
+        <span className="text-muted-foreground">
+          {thread.permanent
+            ? "Permanent. This chat stays in MSG. Messages still disappear after 3 days."
+            : "Not permanent. It leaves MSG once the history is empty, or after 3 quiet days."}
+        </span>
+        <span className={cn("shrink-0 font-semibold", thread.permanent ? "text-primary" : "text-foreground")}>
+          {thread.permanent ? "Permanent" : "Make permanent"}
+        </span>
+      </button>
       <ChatTranscript
         messages={lines}
         meId={me.id}

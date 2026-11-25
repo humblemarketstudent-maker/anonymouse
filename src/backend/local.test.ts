@@ -3,6 +3,7 @@ import { MESSAGE_TTL_MS, type ChatAttachment } from "@/backend/types";
 import { defaultAvatar } from "@/lib/avatar";
 import { CONTACT_BLOCKED } from "@/lib/contact";
 import { NEWS_ITEMS } from "@/data/floor";
+import { heatBars } from "@/lib/heat";
 import { createLocalBackend, STORAGE_KEY, type Kv } from "@/backend/local";
 import { searchRooms } from "@/lib/search";
 
@@ -505,6 +506,22 @@ describe("local anonymouse", () => {
     expect(storage.getItem(STORAGE_KEY)).not.toContain("attachment-token.txt");
   });
 
+  it("spreads room heat across several bar levels", async () => {
+    const { backend } = await signIn();
+    const snap = backend.getSnapshot();
+    const newest = Math.max(...snap.chatters.map((chatter) => chatter.createdAt));
+    const day = 24 * 60 * 60 * 1000;
+    const recent = (roomId: string) =>
+      snap.chatters.filter((chatter) => chatter.roomId === roomId && newest - chatter.createdAt <= day).length;
+    expect(heatBars(recent("room_market"))).toBe(5);
+    expect(heatBars(recent("room_ai"))).toBe(4);
+    expect(heatBars(recent("room_builders"))).toBe(3);
+    expect(heatBars(recent("room_crypto"))).toBe(2);
+    expect(heatBars(recent("room_deals"))).toBe(1);
+    expect(heatBars(recent("room_night"))).toBe(0);
+    expect(heatBars(recent("room_library"))).toBe(0);
+  });
+
   it("saves a mouse on the profile and restores it", async () => {
     const storage = memory();
     const { backend } = await signIn(storage);
@@ -518,5 +535,50 @@ describe("local anonymouse", () => {
     expect(restored.getSnapshot().me?.avatar?.skin).toBe("Soft Pink");
     expect(backend.setAvatar(null).ok).toBe(true);
     expect(backend.getSnapshot().me?.avatar ?? null).toBeNull();
+  });
+
+  it("keeps a permanent chat on MSG after the 3-day purge and drops a quiet one", async () => {
+    const { backend, advance } = await signIn();
+    const snap = backend.getSnapshot();
+    const keep = snap.threads[0]!;
+    const drop = snap.threads[1]!;
+    expect(keep.permanent).toBe(false);
+    expect(backend.setThreadPermanent(keep.id, true).ok).toBe(true);
+    expect(backend.sendMessage(keep.id, "Stay with me.").ok).toBe(true);
+    expect(backend.sendMessage(drop.id, "This one fades.").ok).toBe(true);
+
+    advance(MESSAGE_TTL_MS + 5);
+    const after = backend.getSnapshot();
+    expect(after.messages.some((message) => message.body === "Stay with me.")).toBe(false);
+    expect(after.messages.some((message) => message.body === "This one fades.")).toBe(false);
+    const kept = after.threads.find((thread) => thread.id === keep.id);
+    expect(kept?.permanent).toBe(true);
+    expect(kept?.preview).toBe("No messages in the last 3 days");
+    expect(after.threads.some((thread) => thread.id === drop.id)).toBe(false);
+
+    expect(backend.sendMessage(keep.id, "Still kept.").ok).toBe(true);
+    const revived = backend.getSnapshot().threads.find((thread) => thread.id === keep.id);
+    expect(revived?.permanent).toBe(true);
+    expect(revived?.preview).toContain("Still kept.");
+    expect(backend.getSnapshot().messages.some((message) => message.body === "Stay with me.")).toBe(false);
+
+    const again = backend.openThread(drop.peerId);
+    expect(again.ok).toBe(true);
+    if (!again.ok) return;
+    expect(backend.getSnapshot().threads.some((thread) => thread.peerId === drop.peerId)).toBe(true);
+
+    expect(backend.endChat(keep.id).ok).toBe(true);
+    expect(backend.getSnapshot().threads.some((thread) => thread.id === keep.id)).toBe(false);
+  });
+
+  it("drops an opened chat with no messages after 3 days of inactivity", async () => {
+    const { backend, advance } = await signIn();
+    const peerId = freshPeer(backend);
+    const opened = backend.openThread(peerId);
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) return;
+    expect(backend.getSnapshot().threads.some((thread) => thread.id === opened.threadId)).toBe(true);
+    advance(MESSAGE_TTL_MS + 5);
+    expect(backend.getSnapshot().threads.some((thread) => thread.id === opened.threadId)).toBe(false);
   });
 });

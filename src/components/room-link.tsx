@@ -2,8 +2,10 @@ import type { ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { Room } from "@/backend/types";
 import { Hashtags } from "@/components/hashtags";
+import { HeatRadar } from "@/components/heat-radar";
 import { useFloor } from "@/hooks/use-floor";
 import { useNow } from "@/hooks/use-now";
+import { countRecent } from "@/lib/heat";
 import { formatAge } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -13,8 +15,14 @@ export function RoomLink({ room, trailing }: { room: Room; trailing?: ReactNode 
   const [params, setParams] = useSearchParams();
   const joined = joinedRoomIds.includes(room.id);
   const active = params.get("room") === room.id;
-  const latest = chatters.filter((chatter) => chatter.roomId === room.id).sort((a, b) => b.createdAt - a.createdAt)[0];
+  const lines = chatters.filter((chatter) => chatter.roomId === room.id);
+  const latest = [...lines].sort((a, b) => b.createdAt - a.createdAt)[0];
   const author = latest ? usersById.get(latest.authorId) : undefined;
+  const recent = countRecent(
+    lines.map((line) => line.createdAt),
+    now,
+  );
+  const usersLabel = `${room.listeners} ${room.listeners === 1 ? "user" : "users"}`;
 
   function open() {
     const next = new URLSearchParams(params);
@@ -34,10 +42,13 @@ export function RoomLink({ room, trailing }: { room: Room; trailing?: ReactNode 
           <div className="flex items-baseline gap-2">
             <h2 className="truncate text-[15px] font-semibold">{room.name}</h2>
             {joined ? <span className="shrink-0 text-[10px] font-medium tracking-[0.14em] text-primary uppercase">Joined</span> : null}
-            <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">{room.listeners}</span>
           </div>
+          {room.blurb ? <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{room.blurb}</p> : null}
           <Hashtags tags={room.hashtags} className="mt-1.5" />
-          {room.blurb ? <p className="mt-1.5 line-clamp-2 text-xs text-muted-foreground">{room.blurb}</p> : null}
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="text-xs text-foreground tabular-nums">{usersLabel}</span>
+            <HeatRadar count={recent} />
+          </div>
           {latest && author ? (
             <p className="mt-2 truncate text-sm text-foreground/80">
               <span className="font-medium">{author.alias}</span>

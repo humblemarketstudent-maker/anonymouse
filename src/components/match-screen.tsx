@@ -6,6 +6,7 @@ import { Hashtags } from "@/components/hashtags";
 import { Persona } from "@/components/persona";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useFloor } from "@/hooks/use-floor";
 import { hashtagHits, hashtagTerm } from "@/lib/hashtags";
 
@@ -38,6 +39,12 @@ export function MatchScreen() {
     .filter((item): item is { tap: (typeof incomingTaps)[number]; user: PublicUser } => !!item.user)
     .filter(({ user }) => !term || hashtagHits(user.hashtags, term));
 
+  function refresh() {
+    const result = backend.refreshMatch();
+    if (!result.ok) toast.error(result.error);
+    setSpin((value) => value + 1);
+  }
+
   const cards = useMemo(() => {
     const ids = term
       ? shuffled(
@@ -62,16 +69,32 @@ export function MatchScreen() {
           <span className="font-semibold tabular-nums text-primary">{tapsRemaining}</span>
           <span className="text-muted-foreground"> of {tapLimit} taps left today</span>
         </p>
-        <Input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Filter with #hashtag"
-          aria-label="Filter by hashtag"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          className="mt-3 h-10"
-        />
+        <form
+          className="mt-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            refresh();
+          }}
+        >
+          <Label htmlFor="match-hashtag">Hashtag</Label>
+          <Input
+            id="match-hashtag"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="#markets or markets"
+            aria-label="Hashtag"
+            aria-describedby="match-hashtag-help"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            className="mt-1.5 h-10"
+          />
+        </form>
+        <p id="match-hashtag-help" className="mt-1.5 text-xs leading-snug text-muted-foreground">
+          {term
+            ? `Showing aliases with #${term}. Tap asks for a chat. Refresh draws another set with that tag.`
+            : "Type a hashtag, with or without #, then Refresh. Clear it and Refresh for a new random set."}
+        </p>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {incoming.length > 0 ? (
@@ -137,7 +160,7 @@ export function MatchScreen() {
               : "Nobody new in this pass. Refresh pulls another set. Unanswered taps stay out."}
           </p>
         ) : (
-          <ul>
+          <ul className="pb-6">
             {cards.map((user) => (
               <MatchCard key={user.id} user={user} friend={friendIds.includes(user.id)} tapsRemaining={tapsRemaining} />
             ))}
@@ -159,11 +182,7 @@ export function MatchScreen() {
           type="button"
           variant="outline"
           className="mt-2 h-11 w-full"
-          onClick={() => {
-            const result = backend.refreshMatch();
-            if (!result.ok) toast.error(result.error);
-            setSpin((value) => value + 1);
-          }}
+          onClick={refresh}
         >
           REFRESH
         </Button>
@@ -179,8 +198,8 @@ function PendingBar({ createdAt, expiresAt, now }: { createdAt: number; expiresA
   const minutes = Math.ceil(left / 60_000);
   return (
     <div className="mt-2">
-      <div className="mb-1 flex items-center justify-between text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
-        <span>Pending</span>
+      <div className="mb-1 flex items-center justify-between text-[10px] font-medium text-primary">
+        <span className="tracking-[0.14em] uppercase">Pending</span>
         <span className="tabular-nums">{minutes <= 1 ? "<1m" : `${minutes}m`}</span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-muted" role="meter" aria-label="Time left on this tap" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
