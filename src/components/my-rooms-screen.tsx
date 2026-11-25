@@ -15,7 +15,7 @@ export function MyRoomsScreen() {
     <div className="min-h-0 flex-1 overflow-y-auto">
       <header className="px-4 pt-4 pb-2">
         <h1 className="text-lg font-semibold tracking-tight">My Rooms</h1>
-        <p className="text-sm text-muted-foreground">Rooms you created or joined. Leave any time.</p>
+        <p className="text-sm text-muted-foreground">Open a room to see who's in it. Leave any time.</p>
       </header>
       {joined.length === 0 ? (
         <EmptyState title="No rooms yet" body="Search Chats for a name or a hashtag, then join. A room you create lands here too." />

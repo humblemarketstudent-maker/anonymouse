@@ -55,8 +55,8 @@ A few aliases are already friends, with open lines, and three rooms are already 
 ## Tabs
 
 - **Chats** — search rooms by words or by hashtag, browse the most-used tags, and create a room. New rooms offer the top 20 hashtags as suggestions.
-- **My Rooms** — rooms you joined or created. Open one, or leave it.
-- **Match** — ten random aliases at a time (alias, quote, hashtags). Tap asks for a private chat. Five taps per local day, shown at the top and above the refresh control. The other person has to accept before a conversation exists. In this preview, a mock alias accepts or declines after a short delay, and mocks occasionally tap you. A decline or an ended match stays out of the next passes for several hours. Another 10 loads a fresh set.
+- **My Rooms** — rooms you joined or created. Open one to see the people in it, Telegram-style: a name and their latest line only. The name opens their profile. Leave a room any time.
+- **Match** — 20 random aliases at a time (alias, quote, hashtags). A hashtag field at the top filters that list. Tap asks for a private chat. Twenty taps per local day, shown at the top and again above Refresh. A pending bar counts down for one hour. If they have not accepted by then, the tap drops and that alias stays out of the next shuffles. In this preview, mocks occasionally tap you, and you accept or decline those yourself. A decline or an ended match also stays out of the next passes.
 - **MSG** — direct messages from rooms or Friends, plus conversations that started when a tap was accepted. Burn still wipes a thread. Match threads can also be ended, which keeps that alias out of Match for a while.
 - **Friends** — add or remove aliases. This is separate from tapping someone in Match.
 - **You** — edit the quote and hashtags. Phone number stays on the device. Blocked aliases can be restored here.

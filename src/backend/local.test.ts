@@ -90,11 +90,12 @@ describe("local anonymouse", () => {
     expect(snap.threads.every((thread) => thread.origin === "direct")).toBe(true);
     expect(snap.joinedRoomIds).toEqual(["room_night", "room_library", "room_market"]);
     expect(snap.incomingTaps.map((tap) => tap.fromId)).toEqual(["usr_keel"]);
-    expect(snap.matchPeerIds).toHaveLength(10);
+    expect(snap.matchPeerIds).toHaveLength(20);
     expect(snap.matchPeerIds).not.toContain("usr_keel");
+    expect(snap.matchEligibleIds.length).toBeGreaterThanOrEqual(20);
     expect(snap.topHashtags).toHaveLength(20);
     expect(snap.topHashtags[0]!.count).toBeGreaterThanOrEqual(snap.topHashtags[1]!.count);
-    expect(snap.tapsRemaining).toBe(5);
+    expect(snap.tapsRemaining).toBe(20);
 
     const restored = setup(storage).backend;
     expect(restored.getSnapshot().me?.alias).toBe("TapeMouse");
@@ -149,7 +150,7 @@ describe("local anonymouse", () => {
     expect(added.ok).toBe(true);
     expect(backend.getSnapshot().friendIds).toContain("usr_loom");
     expect(backend.getSnapshot().threads).toHaveLength(beforeThreads);
-    expect(backend.getSnapshot().tapsRemaining).toBe(5);
+    expect(backend.getSnapshot().tapsRemaining).toBe(20);
     expect(backend.getSnapshot().outgoingTaps).toHaveLength(0);
 
     const friendId = backend.getSnapshot().friendIds[0]!;
@@ -186,61 +187,68 @@ describe("local anonymouse", () => {
     expect(backend.addFriend(after.me!.id).ok).toBe(false);
   });
 
-  it("limits taps to five a day and resets on the next local day", async () => {
+  it("limits taps to twenty a day and resets on the next local day", async () => {
     const storage = memory();
     const { backend, advance } = await signIn(storage);
-    const ids = [...backend.getSnapshot().matchPeerIds];
-    expect(ids.length).toBeGreaterThanOrEqual(6);
-    for (let index = 0; index < 5; index += 1) {
-      expect(backend.tapUser(ids[index]!).ok).toBe(true);
+    const snap = backend.getSnapshot();
+    const ids = [...snap.matchPeerIds];
+    expect(ids).toHaveLength(20);
+    const extra = snap.matchEligibleIds.find((id) => !ids.includes(id));
+    expect(extra).toBeTruthy();
+    for (const id of ids) {
+      expect(backend.tapUser(id).ok).toBe(true);
     }
     expect(backend.getSnapshot().tapsRemaining).toBe(0);
-    expect(backend.getSnapshot().outgoingTaps).toHaveLength(5);
-    const blocked = backend.tapUser(ids[5]!);
+    expect(backend.getSnapshot().outgoingTaps).toHaveLength(20);
+    const blocked = backend.tapUser(extra!);
     expect(blocked.ok).toBe(false);
-    if (!blocked.ok) expect(blocked.error).toMatch(/5 a day/);
+    if (!blocked.ok) expect(blocked.error).toMatch(/20 a day/);
 
     const restored = setup(storage).backend;
     expect(restored.getSnapshot().tapsRemaining).toBe(0);
-    expect(restored.getSnapshot().outgoingTaps).toHaveLength(5);
+    expect(restored.getSnapshot().outgoingTaps).toHaveLength(20);
 
     advance(24 * 60 * 60 * 1000);
-    expect(backend.getSnapshot().tapsRemaining).toBe(5);
-    expect(backend.tapUser(ids[5]!).ok).toBe(true);
+    expect(backend.getSnapshot().tapsRemaining).toBe(20);
+    expect(backend.tapUser(extra!).ok).toBe(true);
   });
 
-  it("opens MSG after an accepted tap and keeps a decline out of the next pool", async () => {
+  it("keeps an outgoing tap pending and opens MSG when an incoming tap is accepted", async () => {
     const accepted = await signIn(memory(), "TapeMouse", () => 0.1, true);
     const peerId = freshPeer(accepted.backend);
     expect(accepted.backend.tapUser(peerId).ok).toBe(true);
     const after = accepted.backend.getSnapshot();
-    expect(after.tapsRemaining).toBe(4);
-    expect(after.outgoingTaps).toHaveLength(0);
-    const thread = after.threads.find((item) => item.peerId === peerId);
-    expect(thread?.origin).toBe("match");
-    expect(thread?.preview).toBe("You tapped. I'm here.");
+    expect(after.tapsRemaining).toBe(19);
+    expect(after.outgoingTaps.map((tap) => tap.toId)).toEqual([peerId]);
+    expect(after.threads.some((item) => item.peerId === peerId)).toBe(false);
     expect(after.matchPeerIds).not.toContain(peerId);
-
-    expect(accepted.backend.endMatch(thread!.id).ok).toBe(true);
-    expect(accepted.backend.getSnapshot().threads.some((item) => item.id === thread!.id)).toBe(false);
     accepted.backend.refreshMatch();
     expect(accepted.backend.getSnapshot().matchPeerIds).not.toContain(peerId);
 
-    const declined = await signIn(memory(), "OtherMouse", () => 0.95, true);
-    const passed = freshPeer(declined.backend);
-    expect(declined.backend.tapUser(passed).ok).toBe(true);
-    expect(declined.backend.getSnapshot().threads.some((item) => item.peerId === passed)).toBe(false);
-    expect(declined.backend.getSnapshot().outgoingTaps).toHaveLength(0);
-    declined.backend.refreshMatch();
-    expect(declined.backend.getSnapshot().matchPeerIds).not.toContain(passed);
-
-    const incoming = declined.backend.getSnapshot().incomingTaps[0]!;
-    const started = declined.backend.acceptTap(incoming.id);
+    const incoming = after.incomingTaps[0]!;
+    const started = accepted.backend.acceptTap(incoming.id);
     expect(started.ok).toBe(true);
     if (!started.ok) return;
-    expect(
-      declined.backend.getSnapshot().threads.some((item) => item.id === started.threadId && item.origin === "match"),
-    ).toBe(true);
+    const thread = accepted.backend.getSnapshot().threads.find((item) => item.id === started.threadId);
+    expect(thread?.origin).toBe("match");
+    expect(accepted.backend.endMatch(started.threadId).ok).toBe(true);
+    accepted.backend.refreshMatch();
+    expect(accepted.backend.getSnapshot().matchPeerIds).not.toContain(incoming.fromId);
+  });
+
+  it("drops an unanswered tap after an hour and keeps them out of the next shuffle", async () => {
+    const { backend, advance } = await signIn();
+    const peerId = freshPeer(backend);
+    expect(backend.tapUser(peerId).ok).toBe(true);
+    const pending = backend.getSnapshot().outgoingTaps[0]!;
+    expect(pending.toId).toBe(peerId);
+    expect(pending.expiresAt - pending.createdAt).toBe(60 * 60 * 1000);
+    advance(60 * 60 * 1000);
+    const after = backend.getSnapshot();
+    expect(after.outgoingTaps).toHaveLength(0);
+    expect(after.matchEligibleIds).not.toContain(peerId);
+    backend.refreshMatch();
+    expect(backend.getSnapshot().matchPeerIds).not.toContain(peerId);
   });
 
   it("rejects a taken alias", async () => {

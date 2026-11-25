@@ -1,5 +1,17 @@
 const TAG = /^[a-z][a-z0-9-]{1,23}$/;
 
+/** The searchable part of a hashtag query, with or without a leading #. */
+export function hashtagTerm(raw: string): string {
+  return raw.trim().toLowerCase().replace(/^#+/, "").trim();
+}
+
+/** True when a query matches one of the tags exactly or as a prefix/substring. */
+export function hashtagHits(tags: string[], raw: string): boolean {
+  const term = hashtagTerm(raw);
+  if (!term) return true;
+  return tags.some((tag) => tag === term || tag.includes(term));
+}
+
 /** Turn free text into a stored hashtag, without the leading #. */
 export function normalizeHashtag(raw: string): string | null {
   let value = raw.trim().toLowerCase();

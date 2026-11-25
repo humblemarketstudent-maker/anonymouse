@@ -3,6 +3,7 @@ import {
   MATCH_COOLDOWN_MS,
   MATCH_PAGE,
   TAP_LIMIT,
+  TAP_WINDOW_MS,
   type AppNotification,
   type Backend,
   type Chatter,
@@ -91,6 +92,7 @@ interface TapRec {
   resolvedAt?: number;
   threadId?: string;
   resolveAt?: number;
+  expiresAt?: number;
   willAccept?: boolean;
 }
 
@@ -242,15 +244,14 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
   let presence = { threadId: null as string | null };
   let pendingOtp: string | null = null;
   const pendingReply = new Set<string>();
-  const armedTaps = new Set<string>();
   let roomCursor = 0;
   const mutedUntil = new Map<string, number>();
   let lastIncomingAt = 0;
   let cancelLive: (() => void) | null = null;
   const listeners = new Set<() => void>();
+  expirePending();
   let snapshot = derive();
   persist();
-  armPendingTaps();
 
   function load(): State {
     const raw = storage.getItem(STORAGE_KEY);
@@ -569,6 +570,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
           (id) => !blocked.has(id) && profileById(id),
         )
       : [];
+    const matchEligibleIds = profile ? eligibleIds(profile.id) : [];
     const incomingTaps = profile
       ? state.taps
           .filter((tap) => tap.toId === profile.id && tap.status === "pending" && !blocked.has(tap.fromId))
@@ -578,8 +580,13 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     const outgoingTaps = profile
       ? state.taps
           .filter((tap) => tap.fromId === profile.id && tap.status === "pending" && !blocked.has(tap.toId))
-          .map((tap) => ({ id: tap.id, toId: tap.toId, createdAt: tap.createdAt }))
-          .sort((a, b) => b.createdAt - a.createdAt)
+          .map((tap) => ({
+            id: tap.id,
+            toId: tap.toId,
+            createdAt: tap.createdAt,
+            expiresAt: tap.expiresAt ?? tap.createdAt + TAP_WINDOW_MS,
+          }))
+          .sort((a, b) => a.expiresAt - b.expiresAt)
       : [];
     return {
       session: account ? { userId: account.userId, method: "phone" } : null,
@@ -598,6 +605,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       flashes,
       announcement,
       matchPeerIds,
+      matchEligibleIds,
       tapsRemaining: profile ? Math.max(0, TAP_LIMIT - usedToday(profile.id)) : TAP_LIMIT,
       tapLimit: TAP_LIMIT,
       incomingTaps,
@@ -767,56 +775,21 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     return { threadId: thread.id, greeted: true };
   }
 
-  function resolveOutgoing(tap: TapRec) {
-    if (tap.status !== "pending") return;
-    const peer = profileById(tap.toId);
-    if (tap.willAccept) {
-      const opened = openMatchThread(tap, true);
-      tap.status = "accepted";
+  function expirePending(): boolean {
+    const sessionId = state.sessionUserId;
+    if (!sessionId) return false;
+    let changed = false;
+    for (const tap of state.taps) {
+      if (tap.status !== "pending" || tap.fromId !== sessionId) continue;
+      const deadline = tap.expiresAt ?? tap.createdAt + TAP_WINDOW_MS;
+      if (deadline > now()) continue;
+      tap.status = "declined";
       tap.resolvedAt = now();
-      tap.threadId = opened.threadId;
-      removeFromBatch(tap.fromId, tap.toId);
-      if (!opened.greeted) {
-        pushNote({
-          userId: tap.fromId,
-          title: `${peer?.alias ?? "Someone"} accepted`,
-          body: "The conversation is in MSG.",
-          threadId: opened.threadId,
-          peerId: tap.toId,
-          flash: true,
-        });
-      }
-      return;
+      exclude(sessionId, tap.toId);
+      removeFromBatch(sessionId, tap.toId);
+      changed = true;
     }
-    tap.status = "declined";
-    tap.resolvedAt = now();
-    exclude(tap.fromId, tap.toId);
-    removeFromBatch(tap.fromId, tap.toId);
-    pushNote({
-      userId: tap.fromId,
-      title: `${peer?.alias ?? "Someone"} passed`,
-      body: "They stay out of Match for a while.",
-      peerId: tap.toId,
-      flash: true,
-    });
-  }
-
-  function armOutgoing(tap: TapRec) {
-    if (tap.status !== "pending" || !tap.resolveAt || tap.willAccept === undefined) return;
-    if (armedTaps.has(tap.id)) return;
-    armedTaps.add(tap.id);
-    const delay = Math.max(0, tap.resolveAt - now());
-    schedule(() => {
-      armedTaps.delete(tap.id);
-      const current = state.taps.find((item) => item.id === tap.id);
-      if (!current || current.status !== "pending") return;
-      resolveOutgoing(current);
-      emit();
-    }, delay);
-  }
-
-  function armPendingTaps() {
-    for (const tap of state.taps) armOutgoing(tap);
+    return changed;
   }
 
   function finishMatchPair(userId: string, peerId: string) {
@@ -941,6 +914,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
   }
 
   function runLive() {
+    expirePending();
     const roll = random();
     if (roll < 0.62) {
       const take = LIVE_ROOMS[roomCursor % LIVE_ROOMS.length];
@@ -969,10 +943,16 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       return () => listeners.delete(listener);
     },
     getSnapshot() {
+      const expired = expirePending();
       const profileId = sessionAccount()?.profile?.id;
+      let refresh = expired;
       if (profileId) {
         const remaining = Math.max(0, TAP_LIMIT - usedToday(profileId));
-        if (remaining !== snapshot.tapsRemaining) snapshot = derive();
+        if (remaining !== snapshot.tapsRemaining) refresh = true;
+      }
+      if (refresh) {
+        snapshot = derive();
+        if (expired) persist();
       }
       return snapshot;
     },
@@ -1289,6 +1269,10 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       drawBatch(profile.id, new Set());
       emit();
     },
+    sweepTaps() {
+      if (!expirePending()) return;
+      emit();
+    },
     tapUser(userId) {
       const profile = me();
       if (!profile) return { ok: false, error: "Sign in first." };
@@ -1300,21 +1284,19 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       if (hasOpenTap(profile.id, userId)) return { ok: false, error: "There's already a tap between you." };
       if (isExcluded(profile.id, userId)) return { ok: false, error: "They're out of Match for a while." };
       const day = ensureDay(profile.id);
-      if (day.used >= TAP_LIMIT) return { ok: false, error: "No taps left today. You get 5 a day." };
+      if (day.used >= TAP_LIMIT) return { ok: false, error: `No taps left today. You get ${TAP_LIMIT} a day.` };
       day.used += 1;
-      const delay = 1600 + Math.floor(random() * 1800);
+      const tappedAt = now();
       const tap: TapRec = {
         id: uid("tap"),
         fromId: profile.id,
         toId: userId,
         status: "pending",
-        createdAt: now(),
-        resolveAt: now() + delay,
-        willAccept: random() < 0.8,
+        createdAt: tappedAt,
+        expiresAt: tappedAt + TAP_WINDOW_MS,
       };
       state.taps.push(tap);
       removeFromBatch(profile.id, userId);
-      if (userId.startsWith("usr_")) armOutgoing(tap);
       emit();
       return { ok: true };
     },
@@ -1351,7 +1333,6 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       announcement = "";
       pendingOtp = null;
       presence = { threadId: null };
-      armedTaps.clear();
       lastIncomingAt = 0;
       emit();
     },

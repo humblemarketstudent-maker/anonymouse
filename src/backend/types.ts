@@ -9,10 +9,13 @@
 export const DEMO_OTP = "000000";
 
 /** Conversation requests the signed-in user can send per local day. */
-export const TAP_LIMIT = 5;
+export const TAP_LIMIT = 20;
 
 /** How many aliases Match shows at once. */
-export const MATCH_PAGE = 10;
+export const MATCH_PAGE = 20;
+
+/** How long a tap stays pending before it drops. */
+export const TAP_WINDOW_MS = 60 * 60 * 1000;
 
 /** How long a decline or an ended match stays out of Match. */
 export const MATCH_COOLDOWN_MS = 6 * 60 * 60 * 1000;
@@ -105,6 +108,7 @@ export interface OutgoingTap {
   id: string;
   toId: string;
   createdAt: number;
+  expiresAt: number;
 }
 
 export interface ProfileInput {
@@ -130,6 +134,8 @@ export interface Snapshot {
   flashes: Flash[];
   announcement: string;
   matchPeerIds: string[];
+  /** Aliases who can still be tapped. Hashtag search uses this, not only the current page. */
+  matchEligibleIds: string[];
   tapsRemaining: number;
   tapLimit: number;
   incomingTaps: IncomingTap[];
@@ -172,6 +178,8 @@ export interface Backend {
   setPresence(presence: { threadId: string | null }): void;
   refreshMatch(): Result;
   ensureMatch(): void;
+  /** Drop outgoing taps whose hour has passed. */
+  sweepTaps(): void;
   tapUser(userId: string): Result;
   acceptTap(tapId: string): Result<{ threadId: string }>;
   declineTap(tapId: string): Result;

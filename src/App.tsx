@@ -9,6 +9,7 @@ import { InboxHome, InboxLayout } from "@/components/inbox-screen";
 import { MatchScreen } from "@/components/match-screen";
 import { MeScreen } from "@/components/me-screen";
 import { MyRoomsScreen } from "@/components/my-rooms-screen";
+import { ProfileScreen } from "@/components/profile-screen";
 import { RoomScreen } from "@/components/room-screen";
 import { SetupScreen } from "@/components/setup-screen";
 import { Shell } from "@/components/shell";
@@ -79,6 +80,7 @@ export default function App() {
           <Route index element={<ChatsScreen />} />
           <Route path="chats/new" element={<CreateRoomScreen />} />
           <Route path="room/:roomId" element={<RoomScreen />} />
+          <Route path="profile/:userId" element={<ProfileScreen />} />
           <Route path="mine" element={<MyRoomsScreen />} />
           <Route path="match" element={<MatchScreen />} />
           <Route path="msg" element={<InboxLayout />}>
