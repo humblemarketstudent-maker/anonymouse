@@ -19,3 +19,23 @@ export function formatAge(timestamp: number, now: number): string {
   if (days < 7) return `${days}d`;
   return new Date(timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
+
+/** Day chip inside a conversation: Today, Yesterday, or a calendar date. */
+export function formatDayLabel(timestamp: number, now: number): string {
+  const day = localDayKey(timestamp);
+  if (day === localDayKey(now)) return "Today";
+  const prior = new Date(now);
+  prior.setHours(0, 0, 0, 0);
+  prior.setDate(prior.getDate() - 1);
+  if (day === localDayKey(prior.getTime())) return "Yesterday";
+  const date = new Date(timestamp);
+  const sameYear = date.getFullYear() === new Date(now).getFullYear();
+  return date.toLocaleDateString("en-US", sameYear
+    ? { month: "short", day: "numeric" }
+    : { month: "short", day: "numeric", year: "numeric" });
+}
+
+/** Clock time on a message bubble, e.g. 2:41 PM. */
+export function formatClock(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
