@@ -49,7 +49,7 @@ export function ThreadScreen() {
 
   if (!thread || !peer || !me) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <ChatHeader backTo="/msg" backLabel="Back to MSG" title="Message" />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
           <p className="text-sm text-muted-foreground">This conversation is gone.</p>
@@ -75,12 +75,12 @@ export function ThreadScreen() {
   const fromMatch = thread.origin === "match";
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <ChatHeader
         backTo="/msg"
         backLabel="Back to MSG"
         title={peer.alias}
-        subtitle={fromMatch ? "Match" : "Direct"}
+        subtitle={fromMatch ? "Match line" : "Direct line"}
         onTitle={() => navigate(`/profile/${peer.id}`)}
         titleLabel={`${peer.alias} profile`}
         aside={
@@ -111,13 +111,13 @@ export function ThreadScreen() {
         empty={fromMatch ? "They accepted. Say something." : "Say something. This stays between aliases."}
       />
       <form
-        className="sticky bottom-0 z-20 shrink-0 border-t bg-background/95 px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur"
+        className="sticky bottom-0 z-20 min-w-0 shrink-0 border-t bg-background/95 px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur"
         onSubmit={(event) => {
           event.preventDefault();
           send();
         }}
       >
-        <div className="flex items-end gap-1.5">
+        <div className="flex min-w-0 items-end gap-1.5">
           <Textarea
             value={body}
             onChange={(event) => {
@@ -134,13 +134,17 @@ export function ThreadScreen() {
             aria-label={`Message ${peer.alias}`}
             rows={1}
             maxLength={600}
-            className="max-h-28 min-h-11 flex-1 resize-none overflow-y-auto rounded-2xl border-transparent bg-secondary px-3 py-2.5 text-base leading-5"
+            className="max-h-28 min-h-11 w-auto min-w-0 flex-1 resize-none overflow-y-auto rounded-2xl border-transparent bg-secondary px-3 py-2.5 text-base leading-5 field-sizing-fixed"
           />
           <Button type="submit" className="size-11 rounded-full" aria-label="Send">
             <Send />
           </Button>
         </div>
-        {error ? <p className="mt-1 px-1 text-xs text-destructive">{error}</p> : null}
+        {error ? (
+          <p role="alert" className="mt-1 px-1 text-sm leading-snug text-destructive">
+            {error}
+          </p>
+        ) : null}
       </form>
       <Dialog open={burnOpen} onOpenChange={setBurnOpen}>
         <DialogContent>

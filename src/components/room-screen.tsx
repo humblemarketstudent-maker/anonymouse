@@ -70,7 +70,7 @@ export function RoomScreen() {
 
   if (!room) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <ChatHeader backTo="/mine" backLabel="My Rooms" title="Room" />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
           <p className="text-sm text-muted-foreground">That room isn't here.</p>
@@ -85,7 +85,7 @@ export function RoomScreen() {
   const countLabel = `${people.length} in this room`;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <ChatHeader
         backTo={joined ? "/mine" : "/"}
         backLabel={joined ? "My rooms" : "Chats"}

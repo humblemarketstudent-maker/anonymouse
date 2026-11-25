@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildTranscript } from "@/lib/transcript";
-import { formatClock, formatDayLabel } from "@/lib/time";
+import { formatChatListTime, formatClock, formatDayLabel } from "@/lib/time";
 
 const now = new Date(2026, 10, 25, 15, 0).getTime();
 const today = new Date(2026, 10, 25, 9, 5).getTime();
@@ -20,6 +20,14 @@ describe("formatDayLabel", () => {
     const december = new Date(2026, 11, 1, 8, 0).getTime();
     const november = new Date(2026, 10, 30, 21, 0).getTime();
     expect(formatDayLabel(november, december)).toBe("Yesterday");
+  });
+});
+
+describe("formatChatListTime", () => {
+  it("uses a clock today and a day label after that", () => {
+    expect(formatChatListTime(today, now)).toBe("9:05 AM");
+    expect(formatChatListTime(yesterday, now)).toBe("Yesterday");
+    expect(formatChatListTime(older, now)).toBe("Nov 2");
   });
 });
 

@@ -39,3 +39,14 @@ export function formatDayLabel(timestamp: number, now: number): string {
 export function formatClock(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
+
+/** Chat-list stamp: a clock today, Yesterday, otherwise a short date. */
+export function formatChatListTime(timestamp: number, now: number): string {
+  const day = localDayKey(timestamp);
+  if (day === localDayKey(now)) return formatClock(timestamp);
+  const prior = new Date(now);
+  prior.setHours(0, 0, 0, 0);
+  prior.setDate(prior.getDate() - 1);
+  if (day === localDayKey(prior.getTime())) return "Yesterday";
+  return new Date(timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}

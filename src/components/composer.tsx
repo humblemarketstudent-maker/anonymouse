@@ -85,7 +85,7 @@ export function Composer({
   const allSelected = friendIds.length > 0 && friendIds.every((id) => selected.includes(id));
 
   return (
-    <div className="sticky bottom-0 z-20 shrink-0 border-t bg-background/95 px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur">
+    <div className="sticky bottom-0 z-20 min-w-0 shrink-0 border-t bg-background/95 px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur">
       {mode === "link" ? (
         <div className="mb-2 space-y-2 px-1">
           <Input
@@ -111,7 +111,7 @@ export function Composer({
           {linkPreview ? <NewsCard news={linkPreview} /> : null}
         </div>
       ) : null}
-      <div className="flex items-end gap-1.5">
+      <div className="flex min-w-0 items-end gap-1.5">
         <Button
           type="button"
           variant={mode === "link" ? "secondary" : "ghost"}
@@ -138,7 +138,7 @@ export function Composer({
           aria-label={placeholder}
           rows={1}
           maxLength={280}
-          className="max-h-28 min-h-11 flex-1 resize-none overflow-y-auto rounded-2xl border-transparent bg-secondary px-3 py-2.5 text-base leading-5"
+          className="max-h-28 min-h-11 w-auto min-w-0 flex-1 resize-none overflow-y-auto rounded-2xl border-transparent bg-secondary px-3 py-2.5 text-base leading-5 field-sizing-fixed"
         />
         <Button
           type="button"
@@ -164,7 +164,13 @@ export function Composer({
       </div>
       {error || body.trim().length > 200 ? (
         <div className="mt-1 flex items-center justify-between gap-3 px-1">
-          {error ? <p className="text-xs text-destructive">{error}</p> : <span />}
+          {error ? (
+            <p role="alert" className="min-w-0 flex-1 text-sm leading-snug text-destructive">
+              {error}
+            </p>
+          ) : (
+            <span />
+          )}
           {body.trim().length > 200 ? (
             <span className="ml-auto text-[11px] text-muted-foreground tabular-nums">{body.trim().length}/280</span>
           ) : null}

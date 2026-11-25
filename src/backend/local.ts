@@ -2,6 +2,7 @@ import {
   DEMO_OTP,
   MATCH_COOLDOWN_MS,
   MATCH_PAGE,
+  MESSAGE_TTL_MS,
   TAP_LIMIT,
   TAP_WINDOW_MS,
   type AppNotification,
@@ -11,6 +12,7 @@ import {
   type Flash,
   type NewsLink,
   type PublicUser,
+  type Result,
   type Snapshot,
   type ThreadOrigin,
   type ThreadSummary,
@@ -30,11 +32,12 @@ import {
   SEEDED_INCOMING,
   SEEDED_ROOMS,
 } from "@/data/floor";
+import { CONTACT_BLOCKED, contactViolation } from "@/lib/contact";
 import { collectHashtags } from "@/lib/hashtags";
 import { profileError } from "@/lib/profile";
 import { localDayKey } from "@/lib/time";
 
-const STORAGE_KEY = "anonymouse.v2";
+export const STORAGE_KEY = "anonymouse.v2";
 const TAKE_MAX = 280;
 const DM_MAX = 600;
 
@@ -250,6 +253,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
   let cancelLive: (() => void) | null = null;
   const listeners = new Set<() => void>();
   expirePending();
+  purgeHistory();
   let snapshot = derive();
   persist();
 
@@ -349,9 +353,8 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     }
     for (const room of target.rooms) room.createdAt += delta;
     for (const membership of target.memberships) membership.joinedAt += delta;
-    for (const chatter of target.chatters) chatter.createdAt += delta;
-    for (const thread of target.threads) thread.updatedAt += delta;
-    for (const message of target.messages) message.createdAt += delta;
+    // Room lines, direct messages, and thread activity stay on the wall clock.
+    // Shifting them would freeze their age, and the 3-day purge would never see them age across visits.
     for (const note of target.notifications) note.createdAt += delta;
     for (const tap of target.taps) {
       tap.createdAt += delta;
@@ -366,6 +369,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
   }
 
   function emit() {
+    purgeHistory();
     snapshot = derive();
     persist();
     for (const listener of [...listeners]) listener();
@@ -523,7 +527,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
           .map((friend) => friend.friendId)
       : [];
     const chatters = state.chatters
-      .filter((chatter) => !blocked.has(chatter.authorId))
+      .filter((chatter) => !blocked.has(chatter.authorId) && chatterVisible(chatter))
       .sort((a, b) => a.createdAt - b.createdAt);
     const threads: ThreadSummary[] = profile
       ? state.threads
@@ -542,11 +546,12 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       : [];
     const visibleIds = new Set(threads.map((thread) => thread.id));
     const messages = state.messages
-      .filter((message) => visibleIds.has(message.threadId))
+      .filter((message) => visibleIds.has(message.threadId) && messageVisible(message))
       .sort((a, b) => a.createdAt - b.createdAt);
     const notifications = profile
       ? state.notifications
           .filter((note) => note.userId === profile.id && (!note.peerId || !blocked.has(note.peerId)))
+          .filter((note) => !contactViolation(contactHaystack([note.title, note.body])))
           .map((note) => ({
             id: note.id,
             title: note.title,
@@ -613,9 +618,52 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     };
   }
 
+  function contactHaystack(parts: Array<string | undefined>): string {
+    return parts.filter((part): part is string => !!part).join("\n");
+  }
+
+  function messageVisible(message: DirectMessage): boolean {
+    if (message.createdAt < now() - MESSAGE_TTL_MS) return false;
+    const haystack = contactHaystack([message.body, message.news?.url, message.news?.title, message.news?.summary]);
+    return !contactViolation(haystack);
+  }
+
+  function chatterVisible(chatter: Chatter): boolean {
+    if (chatter.createdAt < now() - MESSAGE_TTL_MS) return false;
+    const haystack = contactHaystack([chatter.body, chatter.news?.url, chatter.news?.title, chatter.news?.summary]);
+    return !contactViolation(haystack);
+  }
+
+  /** Drop room lines and direct messages that are past 3 days or carry contact details. */
+  function purgeHistory(): boolean {
+    const messages = state.messages.filter((message) => messageVisible(message));
+    const chatters = state.chatters.filter((chatter) => chatterVisible(chatter));
+    const notifications = state.notifications.filter(
+      (note) => !contactViolation(contactHaystack([note.title, note.body])),
+    );
+    let changed =
+      messages.length !== state.messages.length ||
+      chatters.length !== state.chatters.length ||
+      notifications.length !== state.notifications.length;
+    state.messages = messages;
+    state.chatters = chatters;
+    state.notifications = notifications;
+    for (const thread of state.threads) {
+      let latest = 0;
+      for (const message of state.messages) {
+        if (message.threadId === thread.id && message.createdAt > latest) latest = message.createdAt;
+      }
+      if (latest > 0 && thread.updatedAt > latest) {
+        thread.updatedAt = latest;
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
   function previewOf(threadId: string): string {
     const msgs = state.messages
-      .filter((message) => message.threadId === threadId)
+      .filter((message) => message.threadId === threadId && messageVisible(message))
       .sort((a, b) => a.createdAt - b.createdAt);
     const last = msgs[msgs.length - 1];
     if (!last) return "New line";
@@ -809,6 +857,20 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     if (presence.threadId === threadId) presence.threadId = null;
   }
 
+  function closePrivateThread(threadId: string): Result {
+    const profile = me();
+    if (!profile) return { ok: false, error: "Sign in first." };
+    const thread = state.threads.find((item) => item.id === threadId);
+    if (!thread || (thread.a !== profile.id && thread.b !== profile.id)) {
+      return { ok: false, error: "That conversation is gone." };
+    }
+    const peerId = thread.a === profile.id ? thread.b : thread.a;
+    if (thread.origin === "match") finishMatchPair(profile.id, peerId);
+    dropThread(threadId);
+    mutedUntil.set(peerId, now() + 3 * 60_000);
+    return { ok: true };
+  }
+
   function seat(userId: string) {
     for (const friendId of SEEDED_FRIENDS) {
       if (profileById(friendId)) state.friends.push({ ownerId: userId, friendId });
@@ -944,15 +1006,16 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     },
     getSnapshot() {
       const expired = expirePending();
+      const purged = purgeHistory();
       const profileId = sessionAccount()?.profile?.id;
-      let refresh = expired;
+      let refresh = expired || purged;
       if (profileId) {
         const remaining = Math.max(0, TAP_LIMIT - usedToday(profileId));
         if (remaining !== snapshot.tapsRemaining) refresh = true;
       }
       if (refresh) {
         snapshot = derive();
-        if (expired) persist();
+        if (expired || purged) persist();
       }
       return snapshot;
     },
@@ -1089,6 +1152,9 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       const news = validNews(input.news) ? input.news : undefined;
       if (!body && !news) return { ok: false, error: "Write something or attach a link." };
       if (body.length > TAKE_MAX) return { ok: false, error: "Keep it to 280 characters." };
+      if (contactViolation(contactHaystack([body, news?.url, news?.title, news?.summary]))) {
+        return { ok: false, error: CONTACT_BLOCKED };
+      }
       const chatter: Chatter = {
         id: uid("cht"),
         authorId: profile.id,
@@ -1128,6 +1194,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       const body = cleanText(raw);
       if (!body) return { ok: false, error: "Write something first." };
       if (body.length > DM_MAX) return { ok: false, error: "Keep the message under 600 characters." };
+      if (contactViolation(body)) return { ok: false, error: CONTACT_BLOCKED };
       addDirect({ thread, senderId: profile.id, body, kind: "text", notify: false, flash: false });
       queueReply(thread.id, peerId, body);
       emit();
@@ -1145,15 +1212,13 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       return { ok: true, threadId: thread.id };
     },
     burnThread(threadId) {
-      const profile = me();
-      if (!profile) return;
-      const thread = state.threads.find((item) => item.id === threadId);
-      if (!thread || (thread.a !== profile.id && thread.b !== profile.id)) return;
-      const peerId = thread.a === profile.id ? thread.b : thread.a;
-      if (thread.origin === "match") finishMatchPair(profile.id, peerId);
-      dropThread(threadId);
-      mutedUntil.set(peerId, now() + 3 * 60_000);
-      emit();
+      const result = closePrivateThread(threadId);
+      if (result.ok) emit();
+    },
+    endChat(threadId) {
+      const result = closePrivateThread(threadId);
+      if (result.ok) emit();
+      return result;
     },
     endMatch(threadId) {
       const profile = me();
