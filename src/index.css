@@ -118,3 +118,24 @@
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* Keep phone toasts off the header and the bottom tab bar. The toaster must not
+   stretch edge to edge, or it steals taps meant for search and New room. */
+@media (max-width: 600px) {
+  [data-sonner-toaster] {
+    top: auto !important;
+    right: auto !important;
+    bottom: 14rem !important;
+    left: 50% !important;
+    width: min(22rem, calc(100vw - 2rem)) !important;
+    transform: translateX(-50%) !important;
+    pointer-events: none;
+  }
+
+  [data-sonner-toaster] [data-sonner-toast] {
+    left: auto !important;
+    right: auto !important;
+    width: 100% !important;
+    pointer-events: auto;
+  }
+}

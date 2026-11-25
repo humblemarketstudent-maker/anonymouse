@@ -2,8 +2,8 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { backend } from "@/backend";
-import { SECTORS, type Sector } from "@/backend/types";
-import { SectorBadge } from "@/components/sector-badge";
+import { HashtagField } from "@/components/hashtag-field";
+import { Hashtags } from "@/components/hashtags";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,54 +18,46 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useFloor } from "@/hooks/use-floor";
 import { aliasError, bioError } from "@/lib/profile";
-import { cn } from "@/lib/utils";
 
 export function MeScreen() {
-  const { me, session, users, blockedUsers } = useFloor();
+  const { me, session, users, blockedUsers, topHashtags } = useFloor();
   const navigate = useNavigate();
   const [alias, setAlias] = useState(me?.alias ?? "");
   const [bio, setBio] = useState(me?.bioQuote ?? "");
-  const [sector, setSector] = useState<Sector | null>(me?.sector ?? null);
+  const [tags, setTags] = useState<string[]>(me?.hashtags ?? []);
   const [error, setError] = useState<string | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
 
   if (!me || !session) return null;
   const profile = me;
-
-  const dirty = alias.trim() !== profile.alias || bio.trim() !== profile.bioQuote || sector !== profile.sector;
+  const sameTags = tags.join("|") === profile.hashtags.join("|");
+  const dirty = alias.trim() !== profile.alias || bio.trim() !== profile.bioQuote || !sameTags;
 
   function save(event: FormEvent) {
     event.preventDefault();
-    if (!sector) {
-      setError("Pick a desk.");
-      return;
-    }
     const issue = aliasError(alias, users, profile.id) ?? bioError(bio);
     if (issue) {
       setError(issue);
       return;
     }
-    const result = backend.updateProfile({ alias, bioQuote: bio, sector });
+    const result = backend.updateProfile({ alias, bioQuote: bio, hashtags: tags });
     if (!result.ok) {
       setError(result.error);
       return;
     }
     setError(null);
-    toast.success("Desk updated.");
+    toast.success("Profile updated.");
   }
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-lg px-4 py-5">
-        <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-primary">Your desk</p>
+        <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-primary">You</p>
         <h1 className="mt-1 text-3xl font-semibold tracking-tight">{profile.alias}</h1>
         <p className="mt-2 font-serif text-xl leading-snug text-foreground/90">{profile.bioQuote}</p>
-        <div className="mt-3">
-          <SectorBadge sector={profile.sector} />
-        </div>
+        <Hashtags tags={profile.hashtags} className="mt-3" />
         <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-          Signed in with a verified {session.method}. The address stays on this device and is never placed on a chatter,
-          in a room, or in a DM.
+          Signed in with a phone number on this device. The number stays here and is never placed on your profile, in a room, or in a message.
         </p>
 
         <form onSubmit={save} className="mt-8 space-y-4">
@@ -83,32 +75,27 @@ export function MeScreen() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="edit-bio">Bio quote</Label>
-            <Textarea id="edit-bio" value={bio} maxLength={80} onChange={(event) => setBio(event.target.value)} className="min-h-16" />
+            <Label htmlFor="edit-bio">Quote</Label>
+            <Textarea
+              id="edit-bio"
+              value={bio}
+              maxLength={80}
+              onChange={(event) => setBio(event.target.value)}
+              className="min-h-16"
+            />
             <p className="text-right text-[11px] tabular-nums text-muted-foreground">{bio.trim().length}/80</p>
           </div>
-          <div className="space-y-2">
-            <Label>Financial sector</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {SECTORS.map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  aria-pressed={sector === item}
-                  onClick={() => setSector(item)}
-                  className={cn(
-                    "rounded-xl border px-3 py-2 text-left text-sm",
-                    sector === item ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-muted",
-                  )}
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
-          </div>
+          <HashtagField
+            label="Hashtags"
+            hint="Interest, country, background, role, area. Freeform."
+            suggestions={topHashtags.map((item) => item.tag)}
+            value={tags}
+            onChange={setTags}
+            max={8}
+          />
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <Button type="submit" disabled={!dirty}>
-            Save desk
+            Save profile
           </Button>
         </form>
 
@@ -120,9 +107,9 @@ export function MeScreen() {
             <ul className="mt-2 divide-y divide-border rounded-xl border">
               {blockedUsers.map((user) => (
                 <li key={user.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
-                  <span>
-                    <span className="block text-sm font-medium">{user.alias}</span>
-                    <span className="block text-xs text-muted-foreground">{user.sector}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">{user.alias}</span>
+                    <span className="block truncate text-xs text-muted-foreground">{user.bioQuote}</span>
                   </span>
                   <Button
                     type="button"
@@ -130,7 +117,7 @@ export function MeScreen() {
                     variant="outline"
                     onClick={() => {
                       backend.unblockUser(user.id);
-                      toast(`${user.alias} is back on your floor.`);
+                      toast(`${user.alias} is visible again.`);
                     }}
                   >
                     Unblock
@@ -153,16 +140,16 @@ export function MeScreen() {
             Sign out
           </Button>
           <Button type="button" variant="ghost" onClick={() => setResetOpen(true)}>
-            Reset demo floor
+            Reset demo
           </Button>
         </div>
       </div>
       <Dialog open={resetOpen} onOpenChange={setResetOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Reset the floor?</DialogTitle>
+            <DialogTitle>Reset this device?</DialogTitle>
             <DialogDescription>
-              Clears this device's session, chatters you posted, friends, and DMs, then restores the seeded floor.
+              Clears the session, profile, joined rooms, friends, taps, and conversations, then restores the seeded rooms.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -175,7 +162,7 @@ export function MeScreen() {
               onClick={() => {
                 backend.resetFloor();
                 navigate("/enter");
-                toast("The floor was reset.");
+                toast("Reset.");
               }}
             >
               Reset

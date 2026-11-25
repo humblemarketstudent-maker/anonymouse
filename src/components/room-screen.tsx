@@ -2,12 +2,12 @@ import { useEffect, useRef } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { backend } from "@/backend";
 import { AliasMenu } from "@/components/alias-menu";
 import { Composer } from "@/components/composer";
+import { Hashtags } from "@/components/hashtags";
 import { NewsCard } from "@/components/news-card";
-import { SectorBadge } from "@/components/sector-badge";
 import { Button } from "@/components/ui/button";
-import { roomById } from "@/data/floor";
 import { useFloor } from "@/hooks/use-floor";
 import { useNow } from "@/hooks/use-now";
 import { openLine } from "@/lib/open-line";
@@ -15,12 +15,13 @@ import { formatAge } from "@/lib/time";
 
 export function RoomScreen() {
   const { roomId = "" } = useParams();
-  const room = roomById(roomId);
-  const { chatters, usersById, me } = useFloor();
+  const { rooms, chatters, usersById, me, joinedRoomIds } = useFloor();
+  const room = rooms.find((item) => item.id === roomId);
   const now = useNow();
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const navigate = useNavigate();
+  const joined = joinedRoomIds.includes(roomId);
   const lines = chatters.filter((chatter) => chatter.roomId === roomId).sort((a, b) => a.createdAt - b.createdAt);
 
   useEffect(() => {
@@ -32,30 +33,50 @@ export function RoomScreen() {
   if (!room) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-        <p className="text-sm text-muted-foreground">That room isn't on the floor.</p>
+        <p className="text-sm text-muted-foreground">That room isn't here.</p>
         <Button variant="outline" asChild>
-          <Link to="/rooms">All rooms</Link>
+          <Link to="/">All chats</Link>
         </Button>
       </div>
     );
   }
 
-  const listeners = room.listeners + ((Math.floor(now / 5000) + room.name.length) % 7) - 3;
+  const listeners = Math.max(1, room.listeners + ((Math.floor(now / 5000) + room.name.length) % 7) - 3);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex shrink-0 items-start gap-2 border-b px-2 py-2.5">
         <Button variant="ghost" size="icon" asChild>
-          <Link to="/rooms" aria-label="All rooms">
+          <Link to={joined ? "/mine" : "/"} aria-label={joined ? "My rooms" : "Chats"}>
             <ArrowLeft />
           </Link>
         </Button>
-        <div className="min-w-0 pt-0.5">
-          <h1 className="truncate text-base font-semibold">#{room.name}</h1>
+        <div className="min-w-0 flex-1 pt-0.5">
+          <h1 className="truncate text-base font-semibold">{room.name}</h1>
           <p className="truncate text-xs text-muted-foreground">
-            {room.blurb} · {listeners} listening
+            {room.blurb || "A room"} · {listeners} here
           </p>
+          <Hashtags
+            tags={room.hashtags}
+            className="mt-1.5"
+            onTag={(tag) => navigate(`/?q=${encodeURIComponent(`#${tag}`)}`)}
+          />
         </div>
+        {joined ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="mt-1"
+            onClick={() => {
+              const result = backend.leaveRoom(room.id);
+              if (!result.ok) toast.error(result.error);
+              else toast(`Left ${room.name}`);
+            }}
+          >
+            Leave
+          </Button>
+        ) : null}
       </header>
       <div
         ref={scroller}
@@ -80,22 +101,22 @@ export function RoomScreen() {
                       className="text-sm font-semibold hover:text-primary"
                       onClick={() => {
                         if (mine) {
-                          toast("That's your chatter.");
+                          toast("That's you.");
                           return;
                         }
                         const threadId = openLine(author.id);
-                        if (threadId) navigate(`/inbox/${threadId}`);
+                        if (threadId) navigate(`/msg/${threadId}`);
                       }}
                     >
                       {author.alias}
                     </button>
                     {mine ? <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-primary">You</span> : null}
-                    <SectorBadge sector={author.sector} />
                     <time className="ml-auto text-[11px] tabular-nums text-muted-foreground">
                       {formatAge(chatter.createdAt, now)}
                     </time>
                   </div>
                   <p className="mt-1 text-xs italic text-muted-foreground">{author.bioQuote}</p>
+                  <Hashtags tags={author.hashtags} className="mt-1.5" />
                   {chatter.body ? <p className="mt-1.5 text-[15px] leading-relaxed text-pretty">{chatter.body}</p> : null}
                   {chatter.news ? <NewsCard news={chatter.news} className="mt-2" /> : null}
                 </div>
@@ -105,7 +126,23 @@ export function RoomScreen() {
           );
         })}
       </div>
-      <Composer roomId={room.id} placeholder={`Say it in #${room.name}`} />
+      {joined ? (
+        <Composer roomId={room.id} placeholder={`Say it in ${room.name}`} />
+      ) : (
+        <div className="shrink-0 border-t px-4 py-3">
+          <Button
+            type="button"
+            className="h-11 w-full"
+            onClick={() => {
+              const result = backend.joinRoom(room.id);
+              if (!result.ok) toast.error(result.error);
+              else toast(`Joined ${room.name}`);
+            }}
+          >
+            Join room
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

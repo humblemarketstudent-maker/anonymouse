@@ -1,39 +1,44 @@
 import {
   DEMO_OTP,
+  MATCH_COOLDOWN_MS,
+  MATCH_PAGE,
+  TAP_LIMIT,
   type AppNotification,
   type Backend,
   type Chatter,
   type DirectMessage,
   type Flash,
-  type Method,
   type NewsLink,
   type PublicUser,
-  type Sector,
   type Snapshot,
+  type ThreadOrigin,
   type ThreadSummary,
 } from "@/backend/types";
 import {
   BLAST_LINES,
-  LIVE_FEED,
   LIVE_ROOMS,
+  MATCH_GREETINGS,
   MOCK_USERS,
   NEWS_ITEMS,
   QUESTION_REPLIES,
   REPLIES,
   SEAT_THREADS,
   SEED_CHATTERS,
+  SEED_ROOMS,
   SEEDED_FRIENDS,
-  roomById,
+  SEEDED_INCOMING,
+  SEEDED_ROOMS,
 } from "@/data/floor";
+import { collectHashtags } from "@/lib/hashtags";
 import { profileError } from "@/lib/profile";
+import { localDayKey } from "@/lib/time";
 
-const STORAGE_KEY = "anonymouse.v1";
+const STORAGE_KEY = "anonymouse.v2";
 const TAKE_MAX = 280;
 const DM_MAX = 600;
 
 interface Account {
   userId: string;
-  method: Method | null;
   contact: string | null;
   profile: PublicUser | null;
   seated: boolean;
@@ -43,6 +48,7 @@ interface ThreadRec {
   id: string;
   a: string;
   b: string;
+  origin: ThreadOrigin;
   updatedAt: number;
   unread: number;
 }
@@ -60,9 +66,56 @@ interface ReportRec {
   createdAt: number;
 }
 
+interface RoomRec {
+  id: string;
+  name: string;
+  blurb: string;
+  hashtags: string[];
+  createdBy: string;
+  createdAt: number;
+  listeners: number;
+}
+
+interface Membership {
+  userId: string;
+  roomId: string;
+  joinedAt: number;
+}
+
+interface TapRec {
+  id: string;
+  fromId: string;
+  toId: string;
+  status: "pending" | "accepted" | "declined" | "ended";
+  createdAt: number;
+  resolvedAt?: number;
+  threadId?: string;
+  resolveAt?: number;
+  willAccept?: boolean;
+}
+
+interface Exclusion {
+  ownerId: string;
+  peerId: string;
+  until: number;
+}
+
+interface MatchBatch {
+  userId: string;
+  peerIds: string[];
+}
+
+interface TapDay {
+  userId: string;
+  dayKey: string;
+  used: number;
+}
+
 interface State {
   accounts: Account[];
   sessionUserId: string | null;
+  rooms: RoomRec[];
+  memberships: Membership[];
   chatters: Chatter[];
   threads: ThreadRec[];
   messages: DirectMessage[];
@@ -70,10 +123,14 @@ interface State {
   blocks: { ownerId: string; blockedId: string }[];
   reports: ReportRec[];
   notifications: NotificationRec[];
+  taps: TapRec[];
+  exclusions: Exclusion[];
+  batches: MatchBatch[];
+  tapDays: TapDay[];
 }
 
 interface Persisted extends State {
-  version: 1;
+  version: 2;
   savedAt: number;
 }
 
@@ -143,13 +200,10 @@ function cleanText(value: string): string {
   return out.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function normalizeContact(method: Method, contact: string): string | null {
-  if (method === "email") {
-    const value = contact.trim().toLowerCase();
-    if (value.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return null;
-    return value;
-  }
-  const digits = contact.replace(/\D/g, "");
+function normalizePhone(contact: string): string | null {
+  const trimmed = contact.trim();
+  if (!trimmed || trimmed.includes("@")) return null;
+  const digits = trimmed.replace(/\D/g, "");
   if (digits.length < 8 || digits.length > 15) return null;
   return `+${digits}`;
 }
@@ -157,8 +211,10 @@ function normalizeContact(method: Method, contact: string): string | null {
 function validNews(news: NewsLink | undefined): news is NewsLink {
   if (!news) return false;
   return (
-    news.url.startsWith("http://") || news.url.startsWith("https://")
-  ) && news.title.trim().length > 0 && news.source.trim().length > 0;
+    (news.url.startsWith("http://") || news.url.startsWith("https://")) &&
+    news.title.trim().length > 0 &&
+    news.source.trim().length > 0
+  );
 }
 
 export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
@@ -184,40 +240,58 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
   let flashes: Flash[] = [];
   let announcement = "";
   let presence = { threadId: null as string | null };
-  let pendingOtp: { contact: string; method: Method } | null = null;
+  let pendingOtp: string | null = null;
   const pendingReply = new Set<string>();
-  let feedCursor = 0;
+  const armedTaps = new Set<string>();
   let roomCursor = 0;
   const mutedUntil = new Map<string, number>();
+  let lastIncomingAt = 0;
   let cancelLive: (() => void) | null = null;
   const listeners = new Set<() => void>();
   let snapshot = derive();
   persist();
+  armPendingTaps();
 
   function load(): State {
     const raw = storage.getItem(STORAGE_KEY);
     if (!raw) return seedState();
     try {
       const parsed = JSON.parse(raw) as Persisted;
-      if (parsed.version !== 1 || !Array.isArray(parsed.accounts) || !Array.isArray(parsed.chatters)) {
+      if (parsed.version !== 2 || !Array.isArray(parsed.accounts) || !Array.isArray(parsed.rooms)) {
         return seedState();
       }
       const next: State = {
         accounts: parsed.accounts,
         sessionUserId: parsed.sessionUserId ?? null,
-        chatters: parsed.chatters,
+        rooms: parsed.rooms,
+        memberships: parsed.memberships ?? [],
+        chatters: parsed.chatters ?? [],
         threads: parsed.threads ?? [],
         messages: parsed.messages ?? [],
         friends: parsed.friends ?? [],
         blocks: parsed.blocks ?? [],
         reports: parsed.reports ?? [],
         notifications: parsed.notifications ?? [],
+        taps: parsed.taps ?? [],
+        exclusions: parsed.exclusions ?? [],
+        batches: parsed.batches ?? [],
+        tapDays: parsed.tapDays ?? [],
       };
+      for (const account of next.accounts) {
+        if (account.profile && !Array.isArray(account.profile.hashtags)) account.profile.hashtags = [];
+      }
       if (next.sessionUserId && !next.accounts.some((account) => account.userId === next.sessionUserId)) {
         next.sessionUserId = null;
       }
       const delta = now() - (parsed.savedAt ?? now());
-      if (delta > 2000) shift(next, delta);
+      if (delta > 2000) {
+        for (const tap of next.taps) {
+          if (tap.status === "pending" && tap.resolveAt && tap.resolveAt <= now()) {
+            tap.resolveAt = parsed.savedAt;
+          }
+        }
+        shift(next, delta);
+      }
       return next;
     } catch {
       return seedState();
@@ -227,30 +301,33 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
   function seedState(): State {
     const clock = now();
     const aliasToId = new Map(MOCK_USERS.map((user) => [user.alias, user.id]));
+    const roomIds = new Set(SEED_ROOMS.map((room) => room.id));
     const chatters: Chatter[] = SEED_CHATTERS.flatMap((item) => {
       const authorId = aliasToId.get(item.alias);
-      if (!authorId) return [];
+      if (!authorId || !roomIds.has(item.roomId)) return [];
       const chatter: Chatter = {
-        id: `seed_${item.roomId ?? "feed"}_${item.minutesAgo}_${authorId}`,
+        id: `seed_${item.roomId}_${item.minutesAgo}_${authorId}`,
         authorId,
-        roomId: item.roomId ?? null,
+        roomId: item.roomId,
         body: item.body,
         createdAt: clock - item.minutesAgo * 60_000,
       };
-      if (item.newsIndex != null && NEWS_ITEMS[item.newsIndex]) {
-        chatter.news = NEWS_ITEMS[item.newsIndex];
-      }
+      if (item.newsIndex != null && NEWS_ITEMS[item.newsIndex]) chatter.news = NEWS_ITEMS[item.newsIndex];
       return [chatter];
     });
     return {
       accounts: MOCK_USERS.map((user) => ({
         userId: user.id,
-        method: null,
         contact: null,
         seated: true,
-        profile: { ...user, joinedAt: clock - 1000 * 60 * 60 * 24 * 30 },
+        profile: { ...user, joinedAt: clock - 1000 * 60 * 60 * 24 * 40 },
       })),
       sessionUserId: null,
+      rooms: SEED_ROOMS.map((room) => ({
+        ...room,
+        createdAt: clock - 1000 * 60 * 60 * 24 * 12,
+      })),
+      memberships: [],
       chatters,
       threads: [],
       messages: [],
@@ -258,6 +335,10 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       blocks: [],
       reports: [],
       notifications: [],
+      taps: [],
+      exclusions: [],
+      batches: [],
+      tapDays: [],
     };
   }
 
@@ -265,14 +346,21 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     for (const account of target.accounts) {
       if (account.profile) account.profile.joinedAt += delta;
     }
+    for (const room of target.rooms) room.createdAt += delta;
+    for (const membership of target.memberships) membership.joinedAt += delta;
     for (const chatter of target.chatters) chatter.createdAt += delta;
     for (const thread of target.threads) thread.updatedAt += delta;
     for (const message of target.messages) message.createdAt += delta;
     for (const note of target.notifications) note.createdAt += delta;
+    for (const tap of target.taps) {
+      tap.createdAt += delta;
+      if (tap.resolvedAt) tap.resolvedAt += delta;
+      if (tap.resolveAt) tap.resolveAt += delta;
+    }
   }
 
   function persist() {
-    const payload: Persisted = { version: 1, savedAt: now(), ...state };
+    const payload: Persisted = { version: 2, savedAt: now(), ...state };
     storage.setItem(STORAGE_KEY, JSON.stringify(payload));
   }
 
@@ -284,7 +372,9 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
 
   function sessionAccount(): Account | null {
     if (!state.sessionUserId) return null;
-    return state.accounts.find((account) => account.userId === state.sessionUserId) ?? null;
+    const account = state.accounts.find((item) => item.userId === state.sessionUserId) ?? null;
+    if (!account?.contact) return null;
+    return account;
   }
 
   function me(): PublicUser | null {
@@ -293,6 +383,10 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
 
   function profiles(): PublicUser[] {
     return state.accounts.flatMap((account) => (account.profile ? [account.profile] : []));
+  }
+
+  function profileById(id: string): PublicUser | null {
+    return state.accounts.find((account) => account.userId === id)?.profile ?? null;
   }
 
   function blockedSet(): Set<string> {
@@ -313,6 +407,108 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     return state.friends.some((friend) => friend.ownerId === ownerId && friend.friendId === otherId);
   }
 
+  function isMember(userId: string, roomId: string) {
+    return state.memberships.some((membership) => membership.userId === userId && membership.roomId === roomId);
+  }
+
+  function roomById(roomId: string) {
+    return state.rooms.find((room) => room.id === roomId) ?? null;
+  }
+
+  function topHashtags() {
+    const counts = new Map<string, number>();
+    const add = (tag: string) => counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    for (const room of state.rooms) {
+      for (const tag of room.hashtags) add(tag);
+    }
+    for (const account of state.accounts) {
+      for (const tag of account.profile?.hashtags ?? []) add(tag);
+    }
+    return [...counts.entries()]
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))
+      .slice(0, 20);
+  }
+
+  function usedToday(userId: string) {
+    const key = localDayKey(now());
+    const row = state.tapDays.find((day) => day.userId === userId);
+    if (!row || row.dayKey !== key) return 0;
+    return row.used;
+  }
+
+  function ensureDay(userId: string) {
+    const key = localDayKey(now());
+    let row = state.tapDays.find((day) => day.userId === userId);
+    if (!row) {
+      row = { userId, dayKey: key, used: 0 };
+      state.tapDays.push(row);
+    } else if (row.dayKey !== key) {
+      row.dayKey = key;
+      row.used = 0;
+    }
+    return row;
+  }
+
+  function pairMatches(tap: TapRec, a: string, b: string) {
+    return (tap.fromId === a && tap.toId === b) || (tap.fromId === b && tap.toId === a);
+  }
+
+  function hasOpenTap(a: string, b: string) {
+    return state.taps.some(
+      (tap) => pairMatches(tap, a, b) && (tap.status === "pending" || tap.status === "accepted"),
+    );
+  }
+
+  function isExcluded(ownerId: string, peerId: string) {
+    const row = state.exclusions.find((item) => item.ownerId === ownerId && item.peerId === peerId);
+    return !!row && row.until > now();
+  }
+
+  function exclude(ownerId: string, peerId: string) {
+    const until = now() + MATCH_COOLDOWN_MS;
+    const row = state.exclusions.find((item) => item.ownerId === ownerId && item.peerId === peerId);
+    if (row) row.until = Math.max(row.until, until);
+    else state.exclusions.push({ ownerId, peerId, until });
+  }
+
+  function eligibleIds(userId: string) {
+    const blocked = blockedSet();
+    return profiles()
+      .map((user) => user.id)
+      .filter((id) => id !== userId && !blocked.has(id) && !isBlocked(id, userId))
+      .filter((id) => !isExcluded(userId, id) && !hasOpenTap(userId, id));
+  }
+
+  function shuffle<T>(list: T[]): T[] {
+    const next = [...list];
+    for (let index = next.length - 1; index > 0; index -= 1) {
+      const swap = Math.floor(random() * (index + 1));
+      const current = next[index]!;
+      next[index] = next[swap]!;
+      next[swap] = current;
+    }
+    return next;
+  }
+
+  function removeFromBatch(userId: string, peerId: string) {
+    const batch = state.batches.find((item) => item.userId === userId);
+    if (!batch) return;
+    batch.peerIds = batch.peerIds.filter((id) => id !== peerId);
+  }
+
+  function drawBatch(userId: string, avoid: Set<string>) {
+    const eligible = eligibleIds(userId);
+    let pool = eligible.filter((id) => !avoid.has(id));
+    if (pool.length < MATCH_PAGE) {
+      pool = [...pool, ...eligible.filter((id) => !pool.includes(id))];
+    }
+    const picked = shuffle(pool).slice(0, MATCH_PAGE);
+    const row = state.batches.find((item) => item.userId === userId);
+    if (row) row.peerIds = picked;
+    else state.batches.push({ userId, peerIds: picked });
+  }
+
   function derive(): Snapshot {
     const account = sessionAccount();
     const profile = account?.profile ?? null;
@@ -331,14 +527,12 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     const threads: ThreadSummary[] = profile
       ? state.threads
           .filter((thread) => thread.a === profile.id || thread.b === profile.id)
-          .map((thread) => {
-            const peerId = thread.a === profile.id ? thread.b : thread.a;
-            return { thread, peerId };
-          })
+          .map((thread) => ({ thread, peerId: thread.a === profile.id ? thread.b : thread.a }))
           .filter(({ peerId }) => !blocked.has(peerId))
           .map(({ thread, peerId }) => ({
             id: thread.id,
             peerId,
+            origin: thread.origin,
             updatedAt: thread.updatedAt,
             unread: thread.unread,
             preview: previewOf(thread.id),
@@ -363,19 +557,51 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
           }))
           .sort((a, b) => b.createdAt - a.createdAt)
       : [];
+    const joinedRoomIds = profile
+      ? state.memberships
+          .map((membership, index) => ({ membership, index }))
+          .filter(({ membership }) => membership.userId === profile.id)
+          .sort((a, b) => b.membership.joinedAt - a.membership.joinedAt || b.index - a.index)
+          .map(({ membership }) => membership.roomId)
+      : [];
+    const matchPeerIds = profile
+      ? (state.batches.find((batch) => batch.userId === profile.id)?.peerIds ?? []).filter(
+          (id) => !blocked.has(id) && profileById(id),
+        )
+      : [];
+    const incomingTaps = profile
+      ? state.taps
+          .filter((tap) => tap.toId === profile.id && tap.status === "pending" && !blocked.has(tap.fromId))
+          .map((tap) => ({ id: tap.id, fromId: tap.fromId, createdAt: tap.createdAt }))
+          .sort((a, b) => b.createdAt - a.createdAt)
+      : [];
+    const outgoingTaps = profile
+      ? state.taps
+          .filter((tap) => tap.fromId === profile.id && tap.status === "pending" && !blocked.has(tap.toId))
+          .map((tap) => ({ id: tap.id, toId: tap.toId, createdAt: tap.createdAt }))
+          .sort((a, b) => b.createdAt - a.createdAt)
+      : [];
     return {
-      session: account && account.method ? { userId: account.userId, method: account.method } : null,
+      session: account ? { userId: account.userId, method: "phone" } : null,
       me: profile,
       users,
       directory,
       blockedUsers,
       friendIds,
+      rooms: [...state.rooms].sort((a, b) => b.listeners - a.listeners || a.name.localeCompare(b.name)),
+      joinedRoomIds,
+      topHashtags: topHashtags(),
       chatters,
       threads,
       messages,
       notifications,
       flashes,
       announcement,
+      matchPeerIds,
+      tapsRemaining: profile ? Math.max(0, TAP_LIMIT - usedToday(profile.id)) : TAP_LIMIT,
+      tapLimit: TAP_LIMIT,
+      incomingTaps,
+      outgoingTaps,
     };
   }
 
@@ -389,11 +615,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     return (prefix + (last.body || last.news?.title || "Link")).slice(0, 160);
   }
 
-  function profileById(id: string): PublicUser | null {
-    return state.accounts.find((account) => account.userId === id)?.profile ?? null;
-  }
-
-  function trimChannel(roomId: string | null, max = 80) {
+  function trimChannel(roomId: string, max = 80) {
     const matching = state.chatters.filter((chatter) => chatter.roomId === roomId);
     if (matching.length <= max) return;
     const oldest = [...matching].sort((a, b) => a.createdAt - b.createdAt).slice(0, matching.length - max);
@@ -412,15 +634,23 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     return state.threads.find((thread) => (thread.a === a && thread.b === b) || (thread.a === b && thread.b === a));
   }
 
-  function ensureThread(a: string, b: string): ThreadRec {
+  function ensureThread(a: string, b: string, origin: ThreadOrigin): ThreadRec {
     const found = findThread(a, b);
     if (found) return found;
-    const thread: ThreadRec = { id: uid("thr"), a, b, updatedAt: now(), unread: 0 };
+    const thread: ThreadRec = { id: uid("thr"), a, b, origin, updatedAt: now(), unread: 0 };
     state.threads.push(thread);
     return thread;
   }
 
-  function pushNote(input: { userId: string; title: string; body: string; threadId?: string; peerId?: string; flash: boolean }) {
+  function pushNote(input: {
+    userId: string;
+    title: string;
+    body: string;
+    threadId?: string;
+    peerId?: string;
+    flash: boolean;
+    match?: boolean;
+  }) {
     const note: NotificationRec = {
       id: uid("note"),
       userId: input.userId,
@@ -434,7 +664,10 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     state.notifications.unshift(note);
     state.notifications = state.notifications.slice(0, 40);
     if (input.flash) {
-      flashes = [...flashes, { id: uid("flash"), title: input.title, body: input.body, threadId: input.threadId }].slice(-5);
+      flashes = [
+        ...flashes,
+        { id: uid("flash"), title: input.title, body: input.body, threadId: input.threadId, match: input.match },
+      ].slice(-5);
     }
   }
 
@@ -481,16 +714,16 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     }
   }
 
-  function pickAuthor(sector?: Sector): PublicUser | null {
+  function pickAuthor(): PublicUser | null {
     const blocked = blockedSet();
-    const pool = profiles().filter((user) => user.id.startsWith("usr_") && user.id !== state.sessionUserId && !blocked.has(user.id));
-    const matched = sector ? pool.filter((user) => user.sector === sector) : pool;
-    const list = matched.length ? matched : pool;
-    if (!list.length) return null;
-    return list[Math.floor(random() * list.length)] ?? null;
+    const pool = profiles().filter(
+      (user) => user.id.startsWith("usr_") && user.id !== state.sessionUserId && !blocked.has(user.id),
+    );
+    if (!pool.length) return null;
+    return pool[Math.floor(random() * pool.length)] ?? null;
   }
 
-  function pushChatter(author: PublicUser, body: string, roomId: string | null, news?: NewsLink) {
+  function pushChatter(author: PublicUser, body: string, roomId: string, news?: NewsLink) {
     state.chatters.push({
       id: uid("cht"),
       authorId: author.id,
@@ -500,7 +733,8 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       createdAt: now(),
     });
     trimChannel(roomId);
-    if (me()) announcement = roomId ? `${author.alias} in a room` : `New chatter from ${author.alias}`;
+    const room = roomById(roomId);
+    if (me()) announcement = `${author.alias} in ${room?.name ?? "a room"}`;
   }
 
   function queueReply(threadId: string, peerId: string, prompt: string) {
@@ -519,12 +753,98 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     }, delay);
   }
 
+  function openMatchThread(tap: TapRec, flash: boolean): { threadId: string; greeted: boolean } {
+    const existing = findThread(tap.fromId, tap.toId);
+    if (existing) {
+      tap.threadId = existing.id;
+      return { threadId: existing.id, greeted: false };
+    }
+    const thread = ensureThread(tap.fromId, tap.toId, "match");
+    const senderId = tap.fromId.startsWith("usr_") ? tap.fromId : tap.toId;
+    const body = MATCH_GREETINGS[Math.floor(random() * MATCH_GREETINGS.length)] ?? MATCH_GREETINGS[0]!;
+    addDirect({ thread, senderId, body, kind: "text", notify: true, flash });
+    tap.threadId = thread.id;
+    return { threadId: thread.id, greeted: true };
+  }
+
+  function resolveOutgoing(tap: TapRec) {
+    if (tap.status !== "pending") return;
+    const peer = profileById(tap.toId);
+    if (tap.willAccept) {
+      const opened = openMatchThread(tap, true);
+      tap.status = "accepted";
+      tap.resolvedAt = now();
+      tap.threadId = opened.threadId;
+      removeFromBatch(tap.fromId, tap.toId);
+      if (!opened.greeted) {
+        pushNote({
+          userId: tap.fromId,
+          title: `${peer?.alias ?? "Someone"} accepted`,
+          body: "The conversation is in MSG.",
+          threadId: opened.threadId,
+          peerId: tap.toId,
+          flash: true,
+        });
+      }
+      return;
+    }
+    tap.status = "declined";
+    tap.resolvedAt = now();
+    exclude(tap.fromId, tap.toId);
+    removeFromBatch(tap.fromId, tap.toId);
+    pushNote({
+      userId: tap.fromId,
+      title: `${peer?.alias ?? "Someone"} passed`,
+      body: "They stay out of Match for a while.",
+      peerId: tap.toId,
+      flash: true,
+    });
+  }
+
+  function armOutgoing(tap: TapRec) {
+    if (tap.status !== "pending" || !tap.resolveAt || tap.willAccept === undefined) return;
+    if (armedTaps.has(tap.id)) return;
+    armedTaps.add(tap.id);
+    const delay = Math.max(0, tap.resolveAt - now());
+    schedule(() => {
+      armedTaps.delete(tap.id);
+      const current = state.taps.find((item) => item.id === tap.id);
+      if (!current || current.status !== "pending") return;
+      resolveOutgoing(current);
+      emit();
+    }, delay);
+  }
+
+  function armPendingTaps() {
+    for (const tap of state.taps) armOutgoing(tap);
+  }
+
+  function finishMatchPair(userId: string, peerId: string) {
+    for (const tap of state.taps) {
+      if (tap.status !== "accepted" || !pairMatches(tap, userId, peerId)) continue;
+      tap.status = "ended";
+      tap.resolvedAt = now();
+    }
+    exclude(userId, peerId);
+    removeFromBatch(userId, peerId);
+  }
+
+  function dropThread(threadId: string) {
+    state.threads = state.threads.filter((item) => item.id !== threadId);
+    state.messages = state.messages.filter((message) => message.threadId !== threadId);
+    state.notifications = state.notifications.filter((note) => note.threadId !== threadId);
+    if (presence.threadId === threadId) presence.threadId = null;
+  }
+
   function seat(userId: string) {
     for (const friendId of SEEDED_FRIENDS) {
-      state.friends.push({ ownerId: userId, friendId });
+      if (profileById(friendId)) state.friends.push({ ownerId: userId, friendId });
+    }
+    for (const roomId of SEEDED_ROOMS) {
+      if (roomById(roomId)) state.memberships.push({ userId, roomId, joinedAt: now() });
     }
     for (const script of SEAT_THREADS) {
-      const thread = ensureThread(userId, script.peerId);
+      const thread = ensureThread(userId, script.peerId, "direct");
       for (const line of [...script.lines].sort((a, b) => b.minutesAgo - a.minutesAgo)) {
         const senderId = line.from === "me" ? userId : script.peerId;
         const createdAt = now() - line.minutesAgo * 60_000;
@@ -554,36 +874,29 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
         });
       }
     }
+    const incoming = profileById(SEEDED_INCOMING);
+    if (incoming && !hasOpenTap(userId, incoming.id)) {
+      state.taps.push({
+        id: uid("tap"),
+        fromId: incoming.id,
+        toId: userId,
+        status: "pending",
+        createdAt: now() - 60_000,
+      });
+      pushNote({
+        userId,
+        title: `${incoming.alias} tapped you`,
+        body: incoming.bioQuote,
+        peerId: incoming.id,
+        flash: false,
+        match: true,
+      });
+    }
   }
 
-  function runLive() {
-    const roll = random();
-    if (roll < 0.62) {
-      const take = LIVE_FEED[feedCursor % LIVE_FEED.length];
-      feedCursor += 1;
-      if (!take) return;
-      const author = pickAuthor(take.sector);
-      if (!author) return;
-      pushChatter(author, take.body, null, take.newsIndex != null ? NEWS_ITEMS[take.newsIndex] : undefined);
-      return;
-    }
-    if (roll < 0.86) {
-      const take = LIVE_ROOMS[roomCursor % LIVE_ROOMS.length];
-      roomCursor += 1;
-      if (!take?.roomId) return;
-      const author = pickAuthor(take.sector);
-      if (!author) return;
-      pushChatter(author, take.body, take.roomId, take.newsIndex != null ? NEWS_ITEMS[take.newsIndex] : undefined);
-      return;
-    }
+  function maybeBlast() {
     const profile = me();
-    if (!profile) {
-      const take = LIVE_FEED[feedCursor % LIVE_FEED.length];
-      feedCursor += 1;
-      const author = take ? pickAuthor(take.sector) : null;
-      if (take && author) pushChatter(author, take.body, null);
-      return;
-    }
+    if (!profile) return;
     const friends = state.friends
       .filter((friend) => friend.ownerId === profile.id && !isBlocked(profile.id, friend.friendId) && !isMuted(friend.friendId))
       .map((friend) => friend.friendId)
@@ -592,8 +905,62 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     const peerId = friends[Math.floor(random() * friends.length)]!;
     const news = NEWS_ITEMS[Math.floor(random() * NEWS_ITEMS.length)];
     const body = BLAST_LINES[Math.floor(random() * BLAST_LINES.length)] ?? BLAST_LINES[0]!;
-    const thread = ensureThread(profile.id, peerId);
-    addDirect({ thread, senderId: peerId, body, kind: "blast", news, notify: true, flash: true });
+    const thread = ensureThread(profile.id, peerId, "direct");
+    addDirect({ thread, senderId: peerId, body, kind: "blast", news, notify: true, flash: false });
+  }
+
+  function maybeIncoming() {
+    const profile = me();
+    if (!profile) return;
+    if (now() - lastIncomingAt < 45_000) return;
+    const pending = state.taps.filter((tap) => tap.toId === profile.id && tap.status === "pending");
+    if (pending.length >= 2) return;
+    const pool = eligibleIds(profile.id);
+    if (!pool.length) return;
+    const peerId = pool[Math.floor(random() * pool.length)];
+    if (!peerId) return;
+    const peer = profileById(peerId);
+    if (!peer) return;
+    lastIncomingAt = now();
+    state.taps.push({
+      id: uid("tap"),
+      fromId: peerId,
+      toId: profile.id,
+      status: "pending",
+      createdAt: now(),
+    });
+    removeFromBatch(profile.id, peerId);
+    pushNote({
+      userId: profile.id,
+      title: `${peer.alias} tapped you`,
+      body: peer.bioQuote,
+      peerId,
+      flash: true,
+      match: true,
+    });
+  }
+
+  function runLive() {
+    const roll = random();
+    if (roll < 0.62) {
+      const take = LIVE_ROOMS[roomCursor % LIVE_ROOMS.length];
+      roomCursor += 1;
+      if (!take) return;
+      if (!roomById(take.roomId)) return;
+      const author = pickAuthor();
+      if (!author) return;
+      pushChatter(author, take.body, take.roomId, take.newsIndex != null ? NEWS_ITEMS[take.newsIndex] : undefined);
+      return;
+    }
+    if (roll < 0.84) {
+      maybeBlast();
+      return;
+    }
+    maybeIncoming();
+  }
+
+  function cleanRoomName(name: string) {
+    return name.trim().replace(/\s+/g, " ");
   }
 
   const api: LocalBackend = {
@@ -602,20 +969,22 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       return () => listeners.delete(listener);
     },
     getSnapshot() {
+      const profileId = sessionAccount()?.profile?.id;
+      if (profileId) {
+        const remaining = Math.max(0, TAP_LIMIT - usedToday(profileId));
+        if (remaining !== snapshot.tapsRemaining) snapshot = derive();
+      }
       return snapshot;
     },
     async requestOtp(input) {
-      const contact = normalizeContact(input.method, input.contact);
-      if (!contact) {
-        return {
-          ok: false,
-          error:
-            input.method === "email"
-              ? "Enter an email address. It never appears on the floor."
-              : "Enter a phone number, at least 8 digits. It never appears on the floor.",
-        };
+      if (input.contact.trim().includes("@")) {
+        return { ok: false, error: "Use a phone number. Email sign-in isn't available." };
       }
-      pendingOtp = { contact, method: input.method };
+      const contact = normalizePhone(input.contact);
+      if (!contact) {
+        return { ok: false, error: "Enter a phone number, at least 8 digits. It never appears on your profile." };
+      }
+      pendingOtp = contact;
       return { ok: true };
     },
     async verifyOtp(code) {
@@ -623,7 +992,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       const digits = code.replace(/\D/g, "");
       if (digits.length !== 6) return { ok: false, error: "Enter the 6-digit code." };
       if (digits !== DEMO_OTP) return { ok: false, error: "That code isn't valid. The demo code is 000000." };
-      const existing = state.accounts.find((account) => account.contact === pendingOtp?.contact);
+      const existing = state.accounts.find((account) => account.contact === pendingOtp);
       if (existing) {
         state.sessionUserId = existing.userId;
         pendingOtp = null;
@@ -632,8 +1001,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       }
       const account: Account = {
         userId: uid("hum"),
-        method: pendingOtp.method,
-        contact: pendingOtp.contact,
+        contact: pendingOtp,
         profile: null,
         seated: false,
       };
@@ -648,16 +1016,18 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       if (!account) return { ok: false, error: "Sign in first." };
       const error = profileError(input, profiles(), account.userId);
       if (error) return { ok: false, error };
+      const tags = collectHashtags(input.hashtags, { min: 0, max: 8 });
       account.profile = {
         id: account.userId,
         alias: input.alias.trim(),
         bioQuote: input.bioQuote.trim(),
-        sector: input.sector,
+        hashtags: tags.tags,
         joinedAt: now(),
       };
       if (!account.seated) {
         seat(account.userId);
         account.seated = true;
+        drawBatch(account.userId, new Set());
       }
       emit();
       return { ok: true };
@@ -667,11 +1037,12 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       if (!account?.profile) return { ok: false, error: "Set up your alias first." };
       const error = profileError(input, profiles(), account.userId);
       if (error) return { ok: false, error };
+      const tags = collectHashtags(input.hashtags, { min: 0, max: 8 });
       account.profile = {
         ...account.profile,
         alias: input.alias.trim(),
         bioQuote: input.bioQuote.trim(),
-        sector: input.sector,
+        hashtags: tags.tags,
       };
       emit();
       return { ok: true };
@@ -681,14 +1052,63 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       pendingOtp = null;
       emit();
     },
+    createRoom(input) {
+      const profile = me();
+      if (!profile) return { ok: false, error: "Sign in first." };
+      const name = cleanRoomName(input.name);
+      if (name.length < 2 || name.length > 32) return { ok: false, error: "Name the room in 2–32 characters." };
+      if (!/^[A-Za-z0-9][A-Za-z0-9 '&+.-]*$/.test(name)) {
+        return { ok: false, error: "Use letters, numbers, and simple punctuation." };
+      }
+      if (state.rooms.some((room) => room.name.toLowerCase() === name.toLowerCase())) {
+        return { ok: false, error: "A room already has that name." };
+      }
+      const blurb = cleanText(input.blurb);
+      if (blurb.length > 140) return { ok: false, error: "Keep the description to 140 characters." };
+      const tags = collectHashtags(input.hashtags, { min: 1, max: 5 });
+      if (tags.error) return { ok: false, error: tags.error };
+      const room: RoomRec = {
+        id: uid("room"),
+        name,
+        blurb,
+        hashtags: tags.tags,
+        createdBy: profile.id,
+        createdAt: now(),
+        listeners: 1,
+      };
+      state.rooms.unshift(room);
+      state.memberships.push({ userId: profile.id, roomId: room.id, joinedAt: now() });
+      emit();
+      return { ok: true, roomId: room.id };
+    },
+    joinRoom(roomId) {
+      const profile = me();
+      if (!profile) return { ok: false, error: "Sign in first." };
+      if (!roomById(roomId)) return { ok: false, error: "That room isn't here." };
+      if (!isMember(profile.id, roomId)) {
+        state.memberships.push({ userId: profile.id, roomId, joinedAt: now() });
+        emit();
+      }
+      return { ok: true };
+    },
+    leaveRoom(roomId) {
+      const profile = me();
+      if (!profile) return { ok: false, error: "Sign in first." };
+      state.memberships = state.memberships.filter(
+        (membership) => !(membership.userId === profile.id && membership.roomId === roomId),
+      );
+      emit();
+      return { ok: true };
+    },
     postChatter(input) {
       const profile = me();
       if (!profile) return { ok: false, error: "Set up your alias first." };
-      if (input.roomId && !roomById(input.roomId)) return { ok: false, error: "That room isn't on the floor." };
+      if (!roomById(input.roomId)) return { ok: false, error: "That room isn't here." };
+      if (!isMember(profile.id, input.roomId)) return { ok: false, error: "Join the room before you post." };
       const body = cleanText(input.body);
       const news = validNews(input.news) ? input.news : undefined;
-      if (!body && !news) return { ok: false, error: "Write a take or attach a link." };
-      if (body.length > TAKE_MAX) return { ok: false, error: "Keep it to 280 characters. This floor is fast." };
+      if (!body && !news) return { ok: false, error: "Write something or attach a link." };
+      if (body.length > TAKE_MAX) return { ok: false, error: "Keep it to 280 characters." };
       const chatter: Chatter = {
         id: uid("cht"),
         authorId: profile.id,
@@ -702,7 +1122,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       const blastIds = [...new Set(input.blastFriendIds ?? [])];
       for (const friendId of blastIds) {
         if (!isFriend(profile.id, friendId) || isBlocked(profile.id, friendId)) continue;
-        const thread = ensureThread(profile.id, friendId);
+        const thread = ensureThread(profile.id, friendId, "direct");
         addDirect({
           thread,
           senderId: profile.id,
@@ -721,7 +1141,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       if (!profile) return { ok: false, error: "Sign in first." };
       const thread = state.threads.find((item) => item.id === threadId);
       if (!thread || (thread.a !== profile.id && thread.b !== profile.id)) {
-        return { ok: false, error: "That line is gone." };
+        return { ok: false, error: "That conversation is gone." };
       }
       const peerId = thread.a === profile.id ? thread.b : thread.a;
       if (isBlocked(profile.id, peerId)) return { ok: false, error: "Unblock this alias before you message them." };
@@ -738,9 +1158,9 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       if (!profile) return { ok: false, error: "Sign in first." };
       if (peerId === profile.id) return { ok: false, error: "You can't message yourself." };
       const peer = profileById(peerId);
-      if (!peer) return { ok: false, error: "That alias isn't on the floor." };
+      if (!peer) return { ok: false, error: "That alias isn't here." };
       if (isBlocked(profile.id, peerId)) return { ok: false, error: "Unblock this alias before you message them." };
-      const thread = ensureThread(profile.id, peerId);
+      const thread = ensureThread(profile.id, peerId, "direct");
       emit();
       return { ok: true, threadId: thread.id };
     },
@@ -749,19 +1169,31 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       if (!profile) return;
       const thread = state.threads.find((item) => item.id === threadId);
       if (!thread || (thread.a !== profile.id && thread.b !== profile.id)) return;
-      state.threads = state.threads.filter((item) => item.id !== threadId);
-      state.messages = state.messages.filter((message) => message.threadId !== threadId);
-      state.notifications = state.notifications.filter((note) => note.threadId !== threadId);
-      if (presence.threadId === threadId) presence.threadId = null;
       const peerId = thread.a === profile.id ? thread.b : thread.a;
+      if (thread.origin === "match") finishMatchPair(profile.id, peerId);
+      dropThread(threadId);
       mutedUntil.set(peerId, now() + 3 * 60_000);
       emit();
+    },
+    endMatch(threadId) {
+      const profile = me();
+      if (!profile) return { ok: false, error: "Sign in first." };
+      const thread = state.threads.find((item) => item.id === threadId);
+      if (!thread || (thread.a !== profile.id && thread.b !== profile.id)) {
+        return { ok: false, error: "That conversation is gone." };
+      }
+      if (thread.origin !== "match") return { ok: false, error: "This chat didn't start from a tap." };
+      const peerId = thread.a === profile.id ? thread.b : thread.a;
+      finishMatchPair(profile.id, peerId);
+      dropThread(threadId);
+      emit();
+      return { ok: true };
     },
     addFriend(userId) {
       const profile = me();
       if (!profile) return { ok: false, error: "Sign in first." };
       if (userId === profile.id) return { ok: false, error: "You can't add yourself." };
-      if (!profileById(userId)) return { ok: false, error: "That alias isn't on the floor." };
+      if (!profileById(userId)) return { ok: false, error: "That alias isn't here." };
       if (isBlocked(profile.id, userId)) return { ok: false, error: "Unblock this alias before you add them." };
       if (!isFriend(profile.id, userId)) state.friends.push({ ownerId: profile.id, friendId: userId });
       emit();
@@ -778,6 +1210,18 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       if (!profile || userId === profile.id) return;
       if (!isBlocked(profile.id, userId)) state.blocks.push({ ownerId: profile.id, blockedId: userId });
       state.friends = state.friends.filter((friend) => !(friend.ownerId === profile.id && friend.friendId === userId));
+      for (const tap of state.taps) {
+        if (tap.status === "pending" && pairMatches(tap, profile.id, userId)) {
+          tap.status = "declined";
+          tap.resolvedAt = now();
+        }
+        if (tap.status === "accepted" && pairMatches(tap, profile.id, userId)) {
+          tap.status = "ended";
+          tap.resolvedAt = now();
+        }
+      }
+      exclude(profile.id, userId);
+      removeFromBatch(profile.id, userId);
       emit();
     },
     unblockUser(userId) {
@@ -830,12 +1274,85 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     setPresence(next) {
       presence = { threadId: next.threadId };
     },
+    refreshMatch() {
+      const profile = me();
+      if (!profile) return { ok: false, error: "Sign in first." };
+      const previous = new Set(state.batches.find((batch) => batch.userId === profile.id)?.peerIds ?? []);
+      drawBatch(profile.id, previous);
+      emit();
+      return { ok: true };
+    },
+    ensureMatch() {
+      const profile = me();
+      if (!profile) return;
+      if (state.batches.some((batch) => batch.userId === profile.id)) return;
+      drawBatch(profile.id, new Set());
+      emit();
+    },
+    tapUser(userId) {
+      const profile = me();
+      if (!profile) return { ok: false, error: "Sign in first." };
+      if (userId === profile.id) return { ok: false, error: "You can't tap yourself." };
+      if (!profileById(userId)) return { ok: false, error: "That alias isn't here." };
+      if (isBlocked(profile.id, userId) || isBlocked(userId, profile.id)) {
+        return { ok: false, error: "Unblock this alias first." };
+      }
+      if (hasOpenTap(profile.id, userId)) return { ok: false, error: "There's already a tap between you." };
+      if (isExcluded(profile.id, userId)) return { ok: false, error: "They're out of Match for a while." };
+      const day = ensureDay(profile.id);
+      if (day.used >= TAP_LIMIT) return { ok: false, error: "No taps left today. You get 5 a day." };
+      day.used += 1;
+      const delay = 1600 + Math.floor(random() * 1800);
+      const tap: TapRec = {
+        id: uid("tap"),
+        fromId: profile.id,
+        toId: userId,
+        status: "pending",
+        createdAt: now(),
+        resolveAt: now() + delay,
+        willAccept: random() < 0.8,
+      };
+      state.taps.push(tap);
+      removeFromBatch(profile.id, userId);
+      if (userId.startsWith("usr_")) armOutgoing(tap);
+      emit();
+      return { ok: true };
+    },
+    acceptTap(tapId) {
+      const profile = me();
+      if (!profile) return { ok: false, error: "Sign in first." };
+      const tap = state.taps.find((item) => item.id === tapId && item.toId === profile.id && item.status === "pending");
+      if (!tap) return { ok: false, error: "That tap is no longer waiting." };
+      if (isBlocked(profile.id, tap.fromId)) return { ok: false, error: "Unblock this alias first." };
+      const opened = openMatchThread(tap, false);
+      tap.status = "accepted";
+      tap.resolvedAt = now();
+      tap.threadId = opened.threadId;
+      const threadId = opened.threadId;
+      removeFromBatch(profile.id, tap.fromId);
+      emit();
+      return { ok: true, threadId };
+    },
+    declineTap(tapId) {
+      const profile = me();
+      if (!profile) return { ok: false, error: "Sign in first." };
+      const tap = state.taps.find((item) => item.id === tapId && item.toId === profile.id && item.status === "pending");
+      if (!tap) return { ok: false, error: "That tap is no longer waiting." };
+      tap.status = "declined";
+      tap.resolvedAt = now();
+      exclude(profile.id, tap.fromId);
+      removeFromBatch(profile.id, tap.fromId);
+      emit();
+      return { ok: true };
+    },
     resetFloor() {
       state = seedState();
       flashes = [];
       announcement = "";
       pendingOtp = null;
       presence = { threadId: null };
+      armedTaps.clear();
+      lastIncomingAt = 0;
       emit();
     },
     startLive() {
@@ -843,7 +1360,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       const loop = () => {
         runLive();
         emit();
-        const delay = 8000 + Math.floor(random() * 6000);
+        const delay = 8000 + Math.floor(random() * 7000);
         cancelLive = schedule(loop, delay);
       };
       cancelLive = schedule(loop, 4500);

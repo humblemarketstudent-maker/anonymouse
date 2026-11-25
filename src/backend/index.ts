@@ -6,9 +6,9 @@ import { createLocalBackend } from "@/backend/local";
  * that implements `Backend` from `./types`. Do not import vendor SDKs
  * from components — keep them behind that adapter.
  *
- * The local backend persists to localStorage and simulates a live floor
- * with timers. Demo OTP is 000000. Contacts are stored for sign-in only
- * and are never copied onto the public snapshot.
+ * The local backend persists to localStorage and simulates live rooms
+ * with timers. Demo OTP is 000000 for any phone number. The number is
+ * stored for sign-in only and is never copied onto the public snapshot.
  */
 export const backend = createLocalBackend();
 
