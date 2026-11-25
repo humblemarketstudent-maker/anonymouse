@@ -8,7 +8,7 @@ export function SplitView({ open, list, panel }: { open: boolean; list: ReactNod
     <div className="flex min-h-0 flex-1">
       <section
         className={cn(
-          "flex min-h-0 w-full flex-col md:w-80 md:max-w-[42%] md:shrink-0 md:border-r",
+          "flex min-h-0 w-full flex-col md:w-[24rem] md:max-w-[46%] md:shrink-0 md:border-r",
           open ? "hidden md:flex" : "flex",
         )}
       >

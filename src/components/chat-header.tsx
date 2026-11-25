@@ -37,8 +37,8 @@ export function ChatHeader({
   );
 
   return (
-    <header className="sticky top-0 z-20 flex shrink-0 items-center gap-0.5 border-b bg-background/95 px-1 py-1 backdrop-blur">
-      <Button variant="ghost" className="size-11 shrink-0" asChild>
+    <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-0.5 border-b bg-background px-1">
+      <Button variant="ghost" className="size-9 shrink-0" asChild>
         <Link to={backTo} aria-label={backLabel}>
           <ArrowLeft />
         </Link>

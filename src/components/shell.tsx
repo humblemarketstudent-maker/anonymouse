@@ -44,9 +44,8 @@ export function Shell() {
 function useChatFocus() {
   const { pathname } = useLocation();
   const [params] = useSearchParams();
-  if ((pathname === "/" || pathname === "/mine") && params.get("room")) return true;
-  if (pathname === "/msg" && params.get("thread")) return true;
-  return false;
+  const onDesk = pathname === "/" || pathname === "/mine" || pathname === "/msg";
+  return onDesk && Boolean(params.get("room") || params.get("thread"));
 }
 
 function Sidebar() {

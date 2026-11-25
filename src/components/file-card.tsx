@@ -6,7 +6,7 @@ export function FileCard({ file }: { file: ChatAttachment }) {
   if (isImageMime(file.mime)) {
     return (
       <a href={file.dataUrl} download={file.name} className="mt-1.5 block max-w-full">
-        <img src={file.dataUrl} alt={file.name} className="max-h-52 max-w-full rounded-lg object-cover" />
+        <img src={file.dataUrl} alt={file.name} className="max-h-40 max-w-full rounded-md object-cover" />
       </a>
     );
   }

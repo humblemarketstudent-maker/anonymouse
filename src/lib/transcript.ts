@@ -7,7 +7,7 @@ export interface TranscriptLine {
 }
 
 export type TranscriptItem<T extends TranscriptLine> =
-  | { kind: "day"; id: string; label: string }
+  | { kind: "day"; id: string; label: string; at: number }
   | { kind: "message"; id: string; message: T; showAlias: boolean; grouped: boolean };
 
 /**
@@ -26,7 +26,7 @@ export function buildTranscript<T extends TranscriptLine>(
   for (const message of sorted) {
     const day = localDayKey(message.createdAt);
     if (day !== lastDay) {
-      items.push({ kind: "day", id: `day-${day}`, label: formatDayLabel(message.createdAt, now) });
+      items.push({ kind: "day", id: `day-${day}`, label: formatDayLabel(message.createdAt, now), at: message.createdAt });
       lastDay = day;
       lastSender = "";
     }

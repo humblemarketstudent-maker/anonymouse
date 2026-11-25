@@ -134,12 +134,12 @@ export function Composer({
           aria-label={placeholder}
           rows={1}
           maxLength={280}
-          className="composer-field max-h-28 min-h-11 w-auto min-w-0 flex-1 resize-none overflow-y-auto rounded-2xl border-transparent bg-secondary px-3 py-2.5 text-base leading-5 field-sizing-fixed"
+          className="composer-field max-h-24 min-h-9 w-auto min-w-0 flex-1 resize-none overflow-y-auto rounded-md border-border bg-background px-2 py-1.5 text-sm leading-5 field-sizing-fixed"
         />
         <Button
           type="button"
           variant="ghost"
-          className="size-11 shrink-0 rounded-full"
+          className="size-9 shrink-0 rounded-md"
           aria-label="Blast to friends"
           onClick={() => {
             const next = draft();
@@ -154,7 +154,7 @@ export function Composer({
         >
           <Megaphone />
         </Button>
-        <Button type="button" className="size-11 shrink-0 rounded-full" aria-label="Send" onClick={() => publish()}>
+        <Button type="button" className="size-9 shrink-0 rounded-md" aria-label="Send" onClick={() => publish()}>
           <Send />
         </Button>
       </div>
