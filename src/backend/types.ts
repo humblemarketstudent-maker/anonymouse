@@ -20,6 +20,9 @@ export const TAP_WINDOW_MS = 60 * 60 * 1000;
 /** How long a decline or an ended match stays out of Match. */
 export const MATCH_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 
+/** Room lines and direct messages older than this are deleted on a rolling clock. */
+export const MESSAGE_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+
 export type ThreadOrigin = "direct" | "match";
 
 export interface PublicUser {
@@ -166,6 +169,8 @@ export interface Backend {
   sendMessage(threadId: string, body: string): Result;
   openThread(peerId: string): Result<{ threadId: string }>;
   burnThread(threadId: string): void;
+  /** Close a private conversation for this user and drop it from MSG. */
+  endChat(threadId: string): Result;
   endMatch(threadId: string): Result;
   addFriend(userId: string): Result;
   removeFriend(userId: string): void;

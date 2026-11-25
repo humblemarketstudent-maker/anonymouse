@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createLocalBackend, type Kv } from "@/backend/local";
+import { MESSAGE_TTL_MS } from "@/backend/types";
+import { CONTACT_BLOCKED } from "@/lib/contact";
+import { NEWS_ITEMS } from "@/data/floor";
+import { createLocalBackend, STORAGE_KEY, type Kv } from "@/backend/local";
 import { searchRooms } from "@/lib/search";
 
 function memory(): Kv {
@@ -249,6 +252,168 @@ describe("local anonymouse", () => {
     expect(after.matchEligibleIds).not.toContain(peerId);
     backend.refreshMatch();
     expect(backend.getSnapshot().matchPeerIds).not.toContain(peerId);
+  });
+
+  it("ends a chat from the list and does not restore that thread", async () => {
+    const { backend } = await signIn();
+    const thread = backend.getSnapshot().threads[0]!;
+    expect(backend.sendMessage(thread.id, "Still with you.").ok).toBe(true);
+    expect(backend.endChat(thread.id).ok).toBe(true);
+    const after = backend.getSnapshot();
+    expect(after.threads.some((item) => item.id === thread.id)).toBe(false);
+    expect(after.messages.some((item) => item.threadId === thread.id)).toBe(false);
+    const again = backend.openThread(thread.peerId);
+    expect(again.ok).toBe(true);
+    if (!again.ok) return;
+    expect(again.threadId).not.toBe(thread.id);
+    expect(backend.getSnapshot().messages.some((item) => item.threadId === thread.id)).toBe(false);
+  });
+
+  it("ends a match chat and keeps that alias out of the next pass", async () => {
+    const accepted = await signIn(memory(), "TapeMouse", () => 0.1, true);
+    const incoming = accepted.backend.getSnapshot().incomingTaps[0]!;
+    const started = accepted.backend.acceptTap(incoming.id);
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    expect(accepted.backend.endChat(started.threadId).ok).toBe(true);
+    expect(accepted.backend.getSnapshot().threads.some((item) => item.id === started.threadId)).toBe(false);
+    accepted.backend.refreshMatch();
+    expect(accepted.backend.getSnapshot().matchPeerIds).not.toContain(incoming.fromId);
+    expect(accepted.backend.getSnapshot().matchEligibleIds).not.toContain(incoming.fromId);
+  });
+
+  it("deletes messages and room lines on a rolling 3-day clock", async () => {
+    const { backend, advance } = await signIn();
+    const threadId = backend.getSnapshot().threads[0]!.id;
+    expect(backend.sendMessage(threadId, "Still here today.").ok).toBe(true);
+    expect(backend.postChatter({ body: "Fresh take.", roomId: "room_market" }).ok).toBe(true);
+
+    advance(26 * 60 * 60 * 1000);
+    const nextDay = backend.getSnapshot();
+    expect(nextDay.messages.some((message) => message.body === "Still here today.")).toBe(true);
+    expect(nextDay.chatters.some((chatter) => chatter.body === "Fresh take.")).toBe(true);
+
+    advance(MESSAGE_TTL_MS - 26 * 60 * 60 * 1000);
+    const atWindow = backend.getSnapshot();
+    expect(atWindow.messages.some((message) => message.body === "Still here today.")).toBe(true);
+
+    advance(1);
+    const expired = backend.getSnapshot();
+    expect(expired.messages.some((message) => message.body === "Still here today.")).toBe(false);
+    expect(expired.chatters.some((chatter) => chatter.body === "Fresh take.")).toBe(false);
+    expect(expired.chatters.some((chatter) => chatter.body.includes("Auction feels heavy"))).toBe(false);
+
+    expect(backend.sendMessage(threadId, "New after the purge.").ok).toBe(true);
+    expect(backend.postChatter({ body: "New room line.", roomId: "room_market" }).ok).toBe(true);
+    const revived = backend.getSnapshot();
+    expect(revived.messages.some((message) => message.body === "New after the purge.")).toBe(true);
+    expect(revived.chatters.some((chatter) => chatter.body === "New room line.")).toBe(true);
+  });
+
+  it("purges old and personal messages already stored in the mock", async () => {
+    const storage = memory();
+    const { backend } = await signIn(storage);
+    const raw = storage.getItem(STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!) as {
+      savedAt: number;
+      threads: { id: string; a: string }[];
+      messages: object[];
+      chatters: object[];
+      notifications: object[];
+    };
+    const thread = parsed.threads[0]!;
+    const old = parsed.savedAt - MESSAGE_TTL_MS - 60_000;
+    parsed.messages.push({
+      id: "msg_old",
+      threadId: thread.id,
+      senderId: thread.a,
+      body: "Ancient note",
+      kind: "text",
+      createdAt: old,
+    });
+    parsed.chatters.push({
+      id: "cht_old",
+      authorId: "usr_loom",
+      roomId: "room_market",
+      body: "Ancient room line",
+      createdAt: old,
+    });
+    parsed.messages.push({
+      id: "msg_pii",
+      threadId: thread.id,
+      senderId: thread.a,
+      body: "mail me at jane@gmail.com",
+      kind: "text",
+      createdAt: parsed.savedAt,
+    });
+    parsed.chatters.push({
+      id: "cht_pii",
+      authorId: "usr_loom",
+      roomId: "room_market",
+      body: "telegram is t.me/nightowl",
+      createdAt: parsed.savedAt,
+    });
+    parsed.notifications.push({
+      id: "note_pii",
+      userId: backend.getSnapshot().me!.id,
+      title: "Alias",
+      body: "ping jane@gmail.com",
+      createdAt: parsed.savedAt,
+      read: false,
+    });
+    storage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+
+    const restored = setup(storage).backend;
+    const snap = restored.getSnapshot();
+    const json = JSON.stringify(snap);
+    expect(json).not.toContain("Ancient note");
+    expect(json).not.toContain("Ancient room line");
+    expect(json).not.toContain("jane@gmail.com");
+    expect(json).not.toContain("t.me/nightowl");
+    expect(storage.getItem(STORAGE_KEY)).not.toContain("jane@gmail.com");
+    expect(snap.messages.some((message) => message.body === "Still short. Smaller than I sound.")).toBe(true);
+  });
+
+  it("refuses personal contact details in rooms and private threads", async () => {
+    const { backend } = await signIn();
+    const threadId = backend.getSnapshot().threads[0]!.id;
+    const blocked = [
+      "text me 212-555-0199",
+      "jane at gmail dot com",
+      "trader@bloomberg.net",
+      "uuid 12345678-1234-1234-1234-123456789abc",
+      "https://t.me/nightowl",
+      "@nightowl_desk",
+    ];
+    for (const body of blocked) {
+      const direct = backend.sendMessage(threadId, body);
+      expect(direct.ok, body).toBe(false);
+      if (!direct.ok) expect(direct.error).toBe(CONTACT_BLOCKED);
+      const room = backend.postChatter({ body, roomId: "room_market" });
+      expect(room.ok, body).toBe(false);
+      expect(JSON.stringify(backend.getSnapshot())).not.toContain(body);
+    }
+
+    expect(backend.sendMessage(threadId, "Still short. Smaller than I sound.").ok).toBe(true);
+    expect(
+      backend.postChatter({
+        body: "The dollar is the tell.",
+        roomId: "room_market",
+        news: NEWS_ITEMS[1],
+      }).ok,
+    ).toBe(true);
+    const link = backend.postChatter({
+      body: "",
+      roomId: "room_market",
+      news: {
+        url: "https://t.me/nightowl",
+        source: "Telegram",
+        title: "A channel",
+        summary: "Come through.",
+      },
+    });
+    expect(link.ok).toBe(false);
   });
 
   it("rejects a taken alias", async () => {
