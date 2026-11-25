@@ -7,6 +7,7 @@ import {
   TAP_WINDOW_MS,
   type AppNotification,
   type Backend,
+  type ChatAttachment,
   type Chatter,
   type DirectMessage,
   type Flash,
@@ -32,7 +33,9 @@ import {
   SEEDED_INCOMING,
   SEEDED_ROOMS,
 } from "@/data/floor";
+import { coerceAvatar, DEMO_AVATARS, parseAvatar, type MouseAvatar } from "@/lib/avatar";
 import { CONTACT_BLOCKED, contactViolation } from "@/lib/contact";
+import { attachmentPreview, validateAttachment } from "@/lib/files";
 import { collectHashtags } from "@/lib/hashtags";
 import { profileError } from "@/lib/profile";
 import { localDayKey } from "@/lib/time";
@@ -40,6 +43,7 @@ import { localDayKey } from "@/lib/time";
 export const STORAGE_KEY = "anonymouse.v2";
 const TAKE_MAX = 280;
 const DM_MAX = 600;
+const STORE_LIMIT = 4_500_000;
 
 interface Account {
   userId: string;
@@ -283,7 +287,11 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
         tapDays: parsed.tapDays ?? [],
       };
       for (const account of next.accounts) {
-        if (account.profile && !Array.isArray(account.profile.hashtags)) account.profile.hashtags = [];
+        if (!account.profile) continue;
+        if (!Array.isArray(account.profile.hashtags)) account.profile.hashtags = [];
+        const avatar = coerceAvatar(account.profile.avatar);
+        if (avatar) account.profile.avatar = avatar;
+        else delete account.profile.avatar;
       }
       if (next.sessionUserId && !next.accounts.some((account) => account.userId === next.sessionUserId)) {
         next.sessionUserId = null;
@@ -325,7 +333,11 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
         userId: user.id,
         contact: null,
         seated: true,
-        profile: { ...user, joinedAt: clock - 1000 * 60 * 60 * 24 * 40 },
+        profile: {
+          ...user,
+          joinedAt: clock - 1000 * 60 * 60 * 24 * 40,
+          ...(DEMO_AVATARS[user.id] ? { avatar: DEMO_AVATARS[user.id] } : {}),
+        },
       })),
       sessionUserId: null,
       rooms: SEED_ROOMS.map((room) => ({
@@ -668,7 +680,8 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     const last = msgs[msgs.length - 1];
     if (!last) return "New line";
     const prefix = last.kind === "blast" ? "Blast · " : "";
-    return (prefix + (last.body || last.news?.title || "Link")).slice(0, 160);
+    const text = last.body || (last.attachment ? attachmentPreview(last.attachment) : last.news?.title || "Link");
+    return (prefix + text).slice(0, 160);
   }
 
   function trimChannel(roomId: string, max = 80) {
@@ -733,6 +746,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     body: string;
     kind: "text" | "blast";
     news?: NewsLink;
+    attachment?: ChatAttachment;
     notify: boolean;
     flash: boolean;
   }) {
@@ -743,6 +757,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       body: input.body,
       kind: input.kind,
       news: input.news,
+      attachment: input.attachment,
       createdAt: now(),
     };
     state.messages.push(message);
@@ -757,7 +772,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     if (incoming && input.notify && sessionId) {
       const sender = profileById(input.senderId);
       const title = input.kind === "blast" ? `${sender?.alias ?? "Someone"} blasted you` : sender?.alias ?? "New line";
-      const body = input.body || input.news?.title || "New message";
+      const body = input.body || (input.attachment ? attachmentPreview(input.attachment) : input.news?.title || "New message");
       const viewing = presence.threadId === input.thread.id;
       pushNote({
         userId: sessionId,
@@ -999,6 +1014,55 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     return name.trim().replace(/\s+/g, " ");
   }
 
+  function storeRoomError(extra: number): string | null {
+    if (extra <= 0) return null;
+    try {
+      const current = storage.getItem(STORAGE_KEY)?.length ?? 0;
+      if (current + extra > STORE_LIMIT) {
+        return "Not enough room on this device for that attachment. Try a smaller file.";
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
+  function takeAttachment(file: ChatAttachment | undefined): { ok: true; attachment?: ChatAttachment } | { ok: false; error: string } {
+    if (!file) return { ok: true };
+    const error = validateAttachment(file);
+    if (error) return { ok: false, error };
+    return {
+      ok: true,
+      attachment: { name: file.name.trim(), mime: file.mime, size: file.size, dataUrl: file.dataUrl },
+    };
+  }
+
+  function composeMessage(input: {
+    body: string;
+    news?: NewsLink;
+    attachment?: ChatAttachment;
+    max: number;
+    lengthError: string;
+    emptyError: string;
+    copies?: number;
+  }): { ok: true; body: string; news?: NewsLink; attachment?: ChatAttachment } | { ok: false; error: string } {
+    const body = cleanText(input.body);
+    if (contactViolation(contactHaystack([body, input.news?.url, input.news?.title, input.news?.summary]))) {
+      return { ok: false, error: CONTACT_BLOCKED };
+    }
+    if (input.news && !validNews(input.news)) return { ok: false, error: "That link doesn't look usable." };
+    if (body.length > input.max) return { ok: false, error: input.lengthError };
+    const file = takeAttachment(input.attachment);
+    if (!file.ok) return file;
+    const news = input.news && validNews(input.news) ? input.news : undefined;
+    if (!body && !news && !file.attachment) return { ok: false, error: input.emptyError };
+    if (file.attachment) {
+      const room = storeRoomError(file.attachment.dataUrl.length * Math.max(1, input.copies ?? 1) + 512);
+      if (room) return { ok: false, error: room };
+    }
+    return { ok: true, body, news, attachment: file.attachment };
+  }
+
   const api: LocalBackend = {
     subscribe(listener) {
       listeners.add(listener);
@@ -1148,33 +1212,39 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       if (!profile) return { ok: false, error: "Set up your alias first." };
       if (!roomById(input.roomId)) return { ok: false, error: "That room isn't here." };
       if (!isMember(profile.id, input.roomId)) return { ok: false, error: "Join the room before you post." };
-      const body = cleanText(input.body);
-      const news = validNews(input.news) ? input.news : undefined;
-      if (!body && !news) return { ok: false, error: "Write something or attach a link." };
-      if (body.length > TAKE_MAX) return { ok: false, error: "Keep it to 280 characters." };
-      if (contactViolation(contactHaystack([body, news?.url, news?.title, news?.summary]))) {
-        return { ok: false, error: CONTACT_BLOCKED };
-      }
+      const blastIds = [...new Set(input.blastFriendIds ?? [])].filter(
+        (friendId) => isFriend(profile.id, friendId) && !isBlocked(profile.id, friendId),
+      );
+      const composed = composeMessage({
+        body: input.body,
+        news: input.news,
+        attachment: input.attachment,
+        max: TAKE_MAX,
+        lengthError: "Keep it to 280 characters.",
+        emptyError: "Write something, attach a file, or share a link.",
+        copies: 1 + blastIds.length,
+      });
+      if (!composed.ok) return composed;
       const chatter: Chatter = {
         id: uid("cht"),
         authorId: profile.id,
         roomId: input.roomId,
-        body,
-        news,
+        body: composed.body,
+        news: composed.news,
+        attachment: composed.attachment,
         createdAt: now(),
       };
       state.chatters.push(chatter);
       trimChannel(input.roomId);
-      const blastIds = [...new Set(input.blastFriendIds ?? [])];
       for (const friendId of blastIds) {
-        if (!isFriend(profile.id, friendId) || isBlocked(profile.id, friendId)) continue;
         const thread = ensureThread(profile.id, friendId, "direct");
         addDirect({
           thread,
           senderId: profile.id,
-          body: body || news?.title || "",
+          body: composed.body || composed.news?.title || (composed.attachment ? attachmentPreview(composed.attachment) : ""),
           kind: "blast",
-          news,
+          news: composed.news,
+          attachment: composed.attachment,
           notify: false,
           flash: false,
         });
@@ -1182,7 +1252,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       emit();
       return { ok: true, id: chatter.id };
     },
-    sendMessage(threadId, raw) {
+    sendMessage(threadId, raw, extras) {
       const profile = me();
       if (!profile) return { ok: false, error: "Sign in first." };
       const thread = state.threads.find((item) => item.id === threadId);
@@ -1191,12 +1261,65 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       }
       const peerId = thread.a === profile.id ? thread.b : thread.a;
       if (isBlocked(profile.id, peerId)) return { ok: false, error: "Unblock this alias before you message them." };
+      const composed = composeMessage({
+        body: raw,
+        news: extras?.news,
+        attachment: extras?.attachment,
+        max: DM_MAX,
+        lengthError: "Keep the message under 600 characters.",
+        emptyError: "Write something, attach a file, or share a link.",
+      });
+      if (!composed.ok) return composed;
+      addDirect({
+        thread,
+        senderId: profile.id,
+        body: composed.body,
+        kind: "text",
+        news: composed.news,
+        attachment: composed.attachment,
+        notify: false,
+        flash: false,
+      });
+      queueReply(thread.id, peerId, composed.body);
+      emit();
+      return { ok: true };
+    },
+    blastThreads(threadIds, raw) {
+      const profile = me();
+      if (!profile) return { ok: false, error: "Sign in first." };
+      const ids = [...new Set(threadIds)];
+      if (ids.length === 0) return { ok: false, error: "Select at least one chat." };
       const body = cleanText(raw);
-      if (!body) return { ok: false, error: "Write something first." };
+      if (!body) return { ok: false, error: "Write a blast first." };
       if (body.length > DM_MAX) return { ok: false, error: "Keep the message under 600 characters." };
       if (contactViolation(body)) return { ok: false, error: CONTACT_BLOCKED };
-      addDirect({ thread, senderId: profile.id, body, kind: "text", notify: false, flash: false });
-      queueReply(thread.id, peerId, body);
+      const threads: ThreadRec[] = [];
+      for (const id of ids) {
+        const thread = state.threads.find((item) => item.id === id);
+        if (!thread || (thread.a !== profile.id && thread.b !== profile.id)) {
+          return { ok: false, error: "One of those chats is gone." };
+        }
+        const peerId = thread.a === profile.id ? thread.b : thread.a;
+        if (isBlocked(profile.id, peerId)) return { ok: false, error: "Unblock every selected alias before you blast." };
+        threads.push(thread);
+      }
+      for (const thread of threads) {
+        addDirect({ thread, senderId: profile.id, body, kind: "blast", notify: false, flash: false });
+      }
+      emit();
+      return { ok: true, sent: threads.length };
+    },
+    setAvatar(avatar: MouseAvatar | null) {
+      const account = sessionAccount();
+      if (!account?.profile) return { ok: false, error: "Set up your alias first." };
+      if (avatar == null) {
+        account.profile = { ...account.profile, avatar: null };
+        emit();
+        return { ok: true };
+      }
+      const parsed = parseAvatar(avatar);
+      if (!parsed.ok) return parsed;
+      account.profile = { ...account.profile, avatar: parsed.avatar };
       emit();
       return { ok: true };
     },

@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
-import { Monogram } from "@/components/monogram";
+import type { MouseAvatar } from "@/lib/avatar";
+import { Persona } from "@/components/persona";
 import { Button } from "@/components/ui/button";
 
 export function ChatHeader({
@@ -12,6 +13,7 @@ export function ChatHeader({
   onTitle,
   titleLabel,
   aside,
+  avatar,
 }: {
   backTo: string;
   backLabel: string;
@@ -20,10 +22,11 @@ export function ChatHeader({
   onTitle?: () => void;
   titleLabel?: string;
   aside?: ReactNode;
+  avatar?: MouseAvatar | null;
 }) {
   const identity = (
     <>
-      <Monogram label={title} />
+      <Persona label={title} avatar={avatar} />
       <span className="min-w-0">
         <span className="block truncate text-[15px] leading-tight font-semibold">{title}</span>
         {subtitle ? (

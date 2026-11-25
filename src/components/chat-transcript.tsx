@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { Check } from "lucide-react";
-import type { NewsLink } from "@/backend/types";
+import type { ChatAttachment, NewsLink } from "@/backend/types";
+import { FileCard } from "@/components/file-card";
 import { NewsCard } from "@/components/news-card";
 import { buildTranscript } from "@/lib/transcript";
 import { formatClock } from "@/lib/time";
@@ -12,6 +13,7 @@ export interface ChatBubble {
   body: string;
   createdAt: number;
   news?: NewsLink;
+  attachment?: ChatAttachment;
   kind?: "text" | "blast";
 }
 
@@ -134,6 +136,7 @@ export function ChatTranscript({
                     {message.body ? (
                       <p className="text-[15px] leading-snug whitespace-pre-wrap text-foreground">{message.body}</p>
                     ) : null}
+                    {message.attachment ? <FileCard file={message.attachment} /> : null}
                     {message.news ? <NewsCard news={message.news} className="mt-1.5 bg-background/50" /> : null}
                     <div className="mt-0.5 flex items-center justify-end gap-1">
                       <time dateTime={new Date(message.createdAt).toISOString()} className="text-[10px] text-muted-foreground tabular-nums">

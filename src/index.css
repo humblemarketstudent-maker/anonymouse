@@ -119,6 +119,12 @@
   display: none;
 }
 
+.composer-field::placeholder {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chat-canvas {
   background-color: oklch(0.14 0.03 262);
   background-image:

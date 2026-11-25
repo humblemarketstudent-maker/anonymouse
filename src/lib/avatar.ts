@@ -1,0 +1,460 @@
+/**
+ * Optional layered mouse avatar. Required layers always have a value.
+ * Optional layers may be "None". Tail, ears, and snout paint from the skin tone.
+ */
+
+export const BACKGROUNDS = [
+  "Pastel Cream",
+  "Pastel Mint",
+  "Pastel Lavender",
+  "Sunset Gradient",
+  "Parisian Kitchen",
+  "Cozy Library",
+  "Cyberpunk Alley",
+  "Swiss Cheese Pattern",
+] as const;
+
+export const TAILS = [
+  "Classic Smooth",
+  "Fluffy Bushy",
+  "Braided",
+  "Curled Heart",
+  "Lightning Bolt",
+  "Cybernetic Metal",
+] as const;
+
+export const TAIL_ACCESSORIES = [
+  "None",
+  "Silk Ribbon Bow",
+  "Tiny Brass Bell",
+  "Bandage Wrap",
+  "Spiked Cuff",
+  "Mini Flag Tip",
+] as const;
+
+export const BUILDS = ["Standard", "Chonky", "Sleek", "Scruffy"] as const;
+
+export const FURS = [
+  "Albino White",
+  "Agouti Brown",
+  "Slate Gray",
+  "Charcoal Black",
+  "Champagne Cream",
+  "Pastel Lilac",
+  "Cyber Blue",
+] as const;
+
+export const SKINS = ["Soft Pink", "Dark Slate", "Warm Tan", "Ruby Tint"] as const;
+
+export const MARKINGS = [
+  "None",
+  "Hooded Stripe",
+  "Berkshire Belly",
+  "Siamese Points",
+  "Dalmatian Spots",
+  "Forehead Blaze",
+] as const;
+
+export const OUTFITS = [
+  "None",
+  "Knitted Sweater",
+  "Oversized Hoodie",
+  "Detective Trench Coat",
+  "Chef Jacket",
+  "Wizard Robe",
+  "Medieval Plate Armor",
+] as const;
+
+export const NECKWEAR = [
+  "None",
+  "Red Bandana",
+  "Bow Tie",
+  "Silk Scarf",
+  "Studded Collar",
+  "Pearl Necklace",
+  "Gold Chain",
+] as const;
+
+export const EARS = ["Standard Top", "Round Dumbo", "Folded Floppy", "Notched Scarred"] as const;
+
+export const EAR_ACCESSORIES = ["None", "Gold Hoop", "Safety Pin", "Daisy Flower", "Mini Headphones"] as const;
+
+export const EYES = [
+  "Glossy Boba",
+  "Ruby Red",
+  "Sleepy Half-Lidded",
+  "Anime Sparkle",
+  "Spiral Dizzy",
+  "Heterochromia",
+  "Glowing Neon",
+] as const;
+
+export const EYEWEAR = [
+  "None",
+  "Wire-Rim Glasses",
+  "Pixel Sunglasses",
+  "Gold Monocle",
+  "Steampunk Goggles",
+  "Pirate Eyepatch",
+] as const;
+
+export const SNOUTS = ["Twitchy Pink Nose", "Buck Teeth", "Cheeky Smirk", "Tiny Fangs", "Nose Bandage"] as const;
+
+export const WHISKERS = [
+  "Neat Straight",
+  "Long Droopy",
+  "Curly Rex",
+  "Scruffy Jagged",
+  "Handlebar",
+  "Cheese Crumb Stuck",
+] as const;
+
+export const HATS = [
+  "None",
+  "Beanie",
+  "Chef's Toque",
+  "Wizard Hat",
+  "Royal Crown",
+  "Pirate Tricorn",
+  "Propeller Cap",
+  "Hollowed Cheese Wedge",
+] as const;
+
+export const PROPS = [
+  "None",
+  "Swiss Cheese Wedge",
+  "Mini Baguette",
+  "Rolled Newspaper",
+  "Wrench",
+  "Magic Wand",
+  "Teacup",
+  "Briefcase",
+] as const;
+
+export const FLAGS = [
+  "None",
+  "Jolly Roger",
+  "Checkered Racing",
+  "White Surrender",
+  "Rainbow Pride",
+  "Custom Guild Banner",
+  "Country Flag Selector",
+] as const;
+
+export const COUNTRIES = [
+  { code: "US", name: "United States" },
+  { code: "GB", name: "United Kingdom" },
+  { code: "FR", name: "France" },
+  { code: "DE", name: "Germany" },
+  { code: "IT", name: "Italy" },
+  { code: "ES", name: "Spain" },
+  { code: "PT", name: "Portugal" },
+  { code: "NL", name: "Netherlands" },
+  { code: "BE", name: "Belgium" },
+  { code: "CH", name: "Switzerland" },
+  { code: "SE", name: "Sweden" },
+  { code: "NO", name: "Norway" },
+  { code: "DK", name: "Denmark" },
+  { code: "FI", name: "Finland" },
+  { code: "IE", name: "Ireland" },
+  { code: "PL", name: "Poland" },
+  { code: "UA", name: "Ukraine" },
+  { code: "GR", name: "Greece" },
+  { code: "TR", name: "Turkey" },
+  { code: "JP", name: "Japan" },
+  { code: "CN", name: "China" },
+  { code: "KR", name: "South Korea" },
+  { code: "IN", name: "India" },
+  { code: "SG", name: "Singapore" },
+  { code: "AU", name: "Australia" },
+  { code: "NZ", name: "New Zealand" },
+  { code: "CA", name: "Canada" },
+  { code: "MX", name: "Mexico" },
+  { code: "BR", name: "Brazil" },
+  { code: "AR", name: "Argentina" },
+  { code: "ZA", name: "South Africa" },
+  { code: "NG", name: "Nigeria" },
+  { code: "EG", name: "Egypt" },
+  { code: "KE", name: "Kenya" },
+  { code: "AE", name: "United Arab Emirates" },
+] as const;
+
+/** Chance an optional layer lands on None while randomizing. */
+export const NONE_CHANCE = {
+  tailAccessory: 0.65,
+  markings: 0.45,
+  outfit: 0.4,
+  neckwear: 0.55,
+  earAccessory: 0.65,
+  eyewear: 0.6,
+  headwear: 0.5,
+  prop: 0.55,
+  flag: 0.7,
+} as const;
+
+export const GUILD_COLORS = ["#34d399", "#1e3a5f", "#f4e7d4", "#e11d48", "#eab308", "#8b5cf6"] as const;
+export const GUILD_LABELS = ["MICE", "DESK", "NIGHT", "OPEN", "QUIET"] as const;
+
+export type Background = (typeof BACKGROUNDS)[number];
+export type Tail = (typeof TAILS)[number];
+export type TailAccessory = (typeof TAIL_ACCESSORIES)[number];
+export type Build = (typeof BUILDS)[number];
+export type Fur = (typeof FURS)[number];
+export type Skin = (typeof SKINS)[number];
+export type Marking = (typeof MARKINGS)[number];
+export type Outfit = (typeof OUTFITS)[number];
+export type Neckwear = (typeof NECKWEAR)[number];
+export type Ears = (typeof EARS)[number];
+export type EarAccessory = (typeof EAR_ACCESSORIES)[number];
+export type Eyes = (typeof EYES)[number];
+export type Eyewear = (typeof EYEWEAR)[number];
+export type Snout = (typeof SNOUTS)[number];
+export type Whiskers = (typeof WHISKERS)[number];
+export type Hat = (typeof HATS)[number];
+export type Prop = (typeof PROPS)[number];
+export type FlagStyle = (typeof FLAGS)[number];
+export type CountryCode = (typeof COUNTRIES)[number]["code"];
+
+export interface MouseAvatar {
+  background: Background;
+  tail: Tail;
+  tailAccessory: TailAccessory;
+  build: Build;
+  fur: Fur;
+  skin: Skin;
+  markings: Marking;
+  outfit: Outfit;
+  neckwear: Neckwear;
+  ears: Ears;
+  earAccessory: EarAccessory;
+  eyes: Eyes;
+  eyewear: Eyewear;
+  snout: Snout;
+  whiskers: Whiskers;
+  headwear: Hat;
+  prop: Prop;
+  flag: FlagStyle;
+  guildColor: string;
+  guildLabel: string;
+  countryCode: CountryCode;
+}
+
+export interface SkinPaint {
+  main: string;
+  deep: string;
+  lite: string;
+}
+
+/** Shared by the tail, the inner ears, and the snout so those layers stay linked. */
+export const SKIN_PAINT: Record<Skin, SkinPaint> = {
+  "Soft Pink": { main: "#f2b4ae", deep: "#d48984", lite: "#ffd9d4" },
+  "Dark Slate": { main: "#5e6976", deep: "#3c4550", lite: "#8d97a4" },
+  "Warm Tan": { main: "#e0b07a", deep: "#c48b4e", lite: "#f6d7b0" },
+  "Ruby Tint": { main: "#d15d6e", deep: "#a33d4e", lite: "#f3a8b3" },
+};
+
+export interface FurPaint {
+  main: string;
+  deep: string;
+  lite: string;
+}
+
+export const FUR_PAINT: Record<Fur, FurPaint> = {
+  "Albino White": { main: "#f7f4ee", deep: "#e0d9cc", lite: "#ffffff" },
+  "Agouti Brown": { main: "#8d5a34", deep: "#69401f", lite: "#c4a27a" },
+  "Slate Gray": { main: "#7b8694", deep: "#56606c", lite: "#c5ced8" },
+  "Charcoal Black": { main: "#2e333a", deep: "#1a1e24", lite: "#8b939e" },
+  "Champagne Cream": { main: "#ead7b4", deep: "#d2b48a", lite: "#fff6e6" },
+  "Pastel Lilac": { main: "#cbb6dc", deep: "#a890bc", lite: "#f3e9f8" },
+  "Cyber Blue": { main: "#3f86b0", deep: "#2a6284", lite: "#b7ddf0" },
+};
+
+export function defaultAvatar(): MouseAvatar {
+  return {
+    background: "Pastel Cream",
+    tail: "Classic Smooth",
+    tailAccessory: "None",
+    build: "Standard",
+    fur: "Agouti Brown",
+    skin: "Soft Pink",
+    markings: "None",
+    outfit: "None",
+    neckwear: "None",
+    ears: "Standard Top",
+    earAccessory: "None",
+    eyes: "Glossy Boba",
+    eyewear: "None",
+    snout: "Twitchy Pink Nose",
+    whiskers: "Neat Straight",
+    headwear: "None",
+    prop: "None",
+    flag: "None",
+    guildColor: GUILD_COLORS[0],
+    guildLabel: "MICE",
+    countryCode: "US",
+  };
+}
+
+/** Colors the renderer uses for the three skin-linked layers. */
+export function linkedPaint(avatar: Pick<MouseAvatar, "skin">): { tail: string; ears: string; snout: string; nose: string } {
+  const skin = SKIN_PAINT[avatar.skin];
+  return { tail: skin.main, ears: skin.main, snout: skin.lite, nose: skin.deep };
+}
+
+function pick<T>(rng: () => number, options: readonly T[]): T {
+  const index = Math.min(options.length - 1, Math.max(0, Math.floor(rng() * options.length)));
+  return options[index]!;
+}
+
+function pickOptional<T extends string>(rng: () => number, noneChance: number, options: readonly T[]): T | "None" {
+  if (rng() < noneChance) return "None";
+  return pick(rng, options);
+}
+
+function withoutNone<T extends string>(options: readonly T[]): T[] {
+  return options.filter((option) => option !== "None");
+}
+
+export function randomAvatar(rng: () => number = Math.random): MouseAvatar {
+  const avatar: MouseAvatar = {
+    ...defaultAvatar(),
+    background: pick(rng, BACKGROUNDS),
+    tail: pick(rng, TAILS),
+    tailAccessory: pickOptional(rng, NONE_CHANCE.tailAccessory, withoutNone(TAIL_ACCESSORIES)),
+    build: pick(rng, BUILDS),
+    fur: pick(rng, FURS),
+    skin: pick(rng, SKINS),
+    markings: pickOptional(rng, NONE_CHANCE.markings, withoutNone(MARKINGS)),
+    outfit: pickOptional(rng, NONE_CHANCE.outfit, withoutNone(OUTFITS)),
+    neckwear: pickOptional(rng, NONE_CHANCE.neckwear, withoutNone(NECKWEAR)),
+    ears: pick(rng, EARS),
+    earAccessory: pickOptional(rng, NONE_CHANCE.earAccessory, withoutNone(EAR_ACCESSORIES)),
+    eyes: pick(rng, EYES),
+    eyewear: pickOptional(rng, NONE_CHANCE.eyewear, withoutNone(EYEWEAR)),
+    snout: pick(rng, SNOUTS),
+    whiskers: pick(rng, WHISKERS),
+    headwear: pickOptional(rng, NONE_CHANCE.headwear, withoutNone(HATS)),
+    prop: pickOptional(rng, NONE_CHANCE.prop, withoutNone(PROPS)),
+  };
+  const flag = pickOptional(rng, NONE_CHANCE.flag, withoutNone(FLAGS));
+  avatar.flag = flag;
+  if (flag === "Custom Guild Banner") {
+    avatar.guildColor = pick(rng, GUILD_COLORS);
+    avatar.guildLabel = pick(rng, GUILD_LABELS);
+  } else if (flag === "Country Flag Selector") {
+    avatar.countryCode = pick(rng, COUNTRIES).code;
+  }
+  return avatar;
+}
+
+export function cleanGuildLabel(raw: string): string {
+  return raw.replace(/[^A-Za-z0-9 ]/g, "").slice(0, 8).trim();
+}
+
+function isOne<T extends string>(options: readonly T[], value: unknown): value is T {
+  return typeof value === "string" && (options as readonly string[]).includes(value);
+}
+
+export function parseAvatar(value: unknown): { ok: true; avatar: MouseAvatar } | { ok: false; error: string } {
+  if (!value || typeof value !== "object") return { ok: false, error: "That mouse isn't valid." };
+  const raw = value as Partial<MouseAvatar>;
+  if (!isOne(BACKGROUNDS, raw.background)) return { ok: false, error: "Pick a background." };
+  if (!isOne(TAILS, raw.tail)) return { ok: false, error: "Pick a tail." };
+  if (!isOne(TAIL_ACCESSORIES, raw.tailAccessory)) return { ok: false, error: "Pick a tail accessory." };
+  if (!isOne(BUILDS, raw.build)) return { ok: false, error: "Pick a build." };
+  if (!isOne(FURS, raw.fur)) return { ok: false, error: "Pick a fur color." };
+  if (!isOne(SKINS, raw.skin)) return { ok: false, error: "Pick a skin tone." };
+  if (!isOne(MARKINGS, raw.markings)) return { ok: false, error: "Pick fur markings." };
+  if (!isOne(OUTFITS, raw.outfit)) return { ok: false, error: "Pick an outfit." };
+  if (!isOne(NECKWEAR, raw.neckwear)) return { ok: false, error: "Pick neckwear." };
+  if (!isOne(EARS, raw.ears)) return { ok: false, error: "Pick ears." };
+  if (!isOne(EAR_ACCESSORIES, raw.earAccessory)) return { ok: false, error: "Pick an ear accessory." };
+  if (!isOne(EYES, raw.eyes)) return { ok: false, error: "Pick eyes." };
+  if (!isOne(EYEWEAR, raw.eyewear)) return { ok: false, error: "Pick eyewear." };
+  if (!isOne(SNOUTS, raw.snout)) return { ok: false, error: "Pick a snout." };
+  if (!isOne(WHISKERS, raw.whiskers)) return { ok: false, error: "Pick whiskers." };
+  if (!isOne(HATS, raw.headwear)) return { ok: false, error: "Pick a hat." };
+  if (!isOne(PROPS, raw.prop)) return { ok: false, error: "Pick a prop." };
+  if (!isOne(FLAGS, raw.flag)) return { ok: false, error: "Pick a flag." };
+  const country = COUNTRIES.find((item) => item.code === raw.countryCode);
+  if (!country) return { ok: false, error: "Pick a country flag." };
+  const guildColor = typeof raw.guildColor === "string" && /^#[0-9a-fA-F]{6}$/.test(raw.guildColor) ? raw.guildColor : GUILD_COLORS[0];
+  const guildLabel = cleanGuildLabel(typeof raw.guildLabel === "string" ? raw.guildLabel : "") || "MICE";
+  return {
+    ok: true,
+    avatar: {
+      background: raw.background,
+      tail: raw.tail,
+      tailAccessory: raw.tailAccessory,
+      build: raw.build,
+      fur: raw.fur,
+      skin: raw.skin,
+      markings: raw.markings,
+      outfit: raw.outfit,
+      neckwear: raw.neckwear,
+      ears: raw.ears,
+      earAccessory: raw.earAccessory,
+      eyes: raw.eyes,
+      eyewear: raw.eyewear,
+      snout: raw.snout,
+      whiskers: raw.whiskers,
+      headwear: raw.headwear,
+      prop: raw.prop,
+      flag: raw.flag,
+      guildColor,
+      guildLabel,
+      countryCode: country.code,
+    },
+  };
+}
+
+export function coerceAvatar(value: unknown): MouseAvatar | null {
+  const parsed = parseAvatar(value);
+  return parsed.ok ? parsed.avatar : null;
+}
+
+/** A few seeded aliases wear a mouse so the inbox can show one. */
+export const DEMO_AVATARS: Record<string, MouseAvatar> = {
+  usr_macro: {
+    ...defaultAvatar(),
+    background: "Cyberpunk Alley",
+    tail: "Cybernetic Metal",
+    tailAccessory: "Spiked Cuff",
+    build: "Sleek",
+    fur: "Cyber Blue",
+    skin: "Dark Slate",
+    markings: "None",
+    outfit: "Oversized Hoodie",
+    neckwear: "Gold Chain",
+    ears: "Standard Top",
+    earAccessory: "Mini Headphones",
+    eyes: "Glowing Neon",
+    eyewear: "Pixel Sunglasses",
+    snout: "Twitchy Pink Nose",
+    whiskers: "Neat Straight",
+    headwear: "None",
+    prop: "Wrench",
+    flag: "None",
+  },
+  usr_folio: {
+    ...defaultAvatar(),
+    background: "Cozy Library",
+    tail: "Classic Smooth",
+    tailAccessory: "Silk Ribbon Bow",
+    build: "Standard",
+    fur: "Champagne Cream",
+    skin: "Warm Tan",
+    markings: "Forehead Blaze",
+    outfit: "Knitted Sweater",
+    neckwear: "Silk Scarf",
+    ears: "Folded Floppy",
+    earAccessory: "None",
+    eyes: "Sleepy Half-Lidded",
+    eyewear: "Wire-Rim Glasses",
+    snout: "Twitchy Pink Nose",
+    whiskers: "Long Droopy",
+    headwear: "Beanie",
+    prop: "Rolled Newspaper",
+    flag: "None",
+  },
+};

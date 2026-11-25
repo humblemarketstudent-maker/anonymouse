@@ -2,7 +2,9 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { backend } from "@/backend";
+import { AvatarEditor } from "@/components/avatar-editor";
 import { HashtagField } from "@/components/hashtag-field";
+import { Persona } from "@/components/persona";
 import { Hashtags } from "@/components/hashtags";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,13 +54,19 @@ export function MeScreen() {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-lg px-4 py-5">
-        <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-primary">You</p>
-        <h1 className="mt-1 text-3xl font-semibold tracking-tight">{profile.alias}</h1>
+        <div className="flex items-center gap-3">
+          <Persona label={profile.alias} avatar={profile.avatar} className="size-16 text-xl" />
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-primary">You</p>
+            <h1 className="mt-1 truncate text-3xl font-semibold tracking-tight">{profile.alias}</h1>
+          </div>
+        </div>
         <p className="mt-2 font-serif text-xl leading-snug text-foreground/90">{profile.bioQuote}</p>
         <Hashtags tags={profile.hashtags} className="mt-3" />
         <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
           Signed in with a phone number on this device. The number stays here and is never placed on your profile, in a room, or in a message.
         </p>
+        <AvatarEditor avatar={profile.avatar} alias={profile.alias} />
 
         <form onSubmit={save} className="mt-8 space-y-4">
           <div className="space-y-2">

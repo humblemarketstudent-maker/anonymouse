@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { backend } from "@/backend";
 import type { OutgoingTap, PublicUser } from "@/backend/types";
 import { Hashtags } from "@/components/hashtags";
+import { Persona } from "@/components/persona";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useFloor } from "@/hooks/use-floor";
@@ -191,10 +192,13 @@ function PendingBar({ createdAt, expiresAt, now }: { createdAt: number; expiresA
 
 function ProfileBlock({ user }: { user: PublicUser }) {
   return (
-    <div>
+    <div className="flex items-start gap-3">
+      {user.avatar ? <Persona label={user.alias} avatar={user.avatar} className="size-11" /> : null}
+      <div className="min-w-0">
       <h3 className="text-base font-semibold">{user.alias}</h3>
       <p className="mt-1 font-serif text-lg leading-snug">{user.bioQuote}</p>
       <Hashtags tags={user.hashtags} className="mt-2" />
+      </div>
     </div>
   );
 }

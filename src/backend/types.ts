@@ -1,3 +1,5 @@
+import type { MouseAvatar } from "@/lib/avatar";
+
 /**
  * App-facing contract. UI code should depend on this module and on
  * `backend` from `./index`, never on localStorage or a vendor SDK.
@@ -31,6 +33,16 @@ export interface PublicUser {
   bioQuote: string;
   hashtags: string[];
   joinedAt: number;
+  /** Layered mouse. Absent means the letter mark. */
+  avatar?: MouseAvatar | null;
+}
+
+/** A file kept in the mock store as a data URL. No upload server. */
+export interface ChatAttachment {
+  name: string;
+  mime: string;
+  size: number;
+  dataUrl: string;
 }
 
 export interface Room {
@@ -61,6 +73,7 @@ export interface Chatter {
   roomId: string;
   body: string;
   news?: NewsLink;
+  attachment?: ChatAttachment;
   createdAt: number;
 }
 
@@ -80,6 +93,7 @@ export interface DirectMessage {
   body: string;
   kind: "text" | "blast";
   news?: NewsLink;
+  attachment?: ChatAttachment;
   createdAt: number;
 }
 
@@ -164,9 +178,14 @@ export interface Backend {
     body: string;
     roomId: string;
     news?: NewsLink;
+    attachment?: ChatAttachment;
     blastFriendIds?: string[];
   }): Result<{ id: string }>;
-  sendMessage(threadId: string, body: string): Result;
+  sendMessage(threadId: string, body: string, extras?: { news?: NewsLink; attachment?: ChatAttachment }): Result;
+  /** Deliver one blast into every selected private thread, or into none. */
+  blastThreads(threadIds: string[], body: string): Result<{ sent: number }>;
+  /** Save this profile's mouse, or pass null to go back to the letter mark. */
+  setAvatar(avatar: MouseAvatar | null): Result;
   openThread(peerId: string): Result<{ threadId: string }>;
   burnThread(threadId: string): void;
   /** Close a private conversation for this user and drop it from MSG. */
