@@ -3,13 +3,17 @@ import { useNavigate } from "react-router-dom";
 import { backend } from "@/backend";
 import { DEMO_OTP } from "@/backend/types";
 import { Mark } from "@/components/mark";
+import { PhoneNumberField } from "@/components/phone-number-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { defaultCallingRegion, formatPhoneDisplay, toE164, type CallingRegion } from "@/lib/calling-codes";
 
 export function AuthScreen() {
   const navigate = useNavigate();
-  const [contact, setContact] = useState("");
+  const [region, setRegion] = useState<CallingRegion>(() => defaultCallingRegion());
+  const [national, setNational] = useState("");
+  const [phoneLabel, setPhoneLabel] = useState("");
   const [step, setStep] = useState<"contact" | "code">("contact");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -18,14 +22,20 @@ export function AuthScreen() {
 
   async function requestCode(event?: FormEvent) {
     event?.preventDefault();
-    setBusy(true);
     setError(null);
-    const result = await backend.requestOtp({ contact });
+    const parsed = toE164(region, national);
+    if (!parsed.ok) {
+      setError(parsed.error);
+      return;
+    }
+    setBusy(true);
+    const result = await backend.requestOtp({ contact: parsed.e164 });
     setBusy(false);
     if (!result.ok) {
       setError(result.error);
       return;
     }
+    setPhoneLabel(formatPhoneDisplay(region, parsed.national));
     setCode("");
     setStep("code");
   }
@@ -57,84 +67,95 @@ export function AuthScreen() {
   }, [code, step, verify]);
 
   return (
-    <main className="relative min-h-dvh overflow-hidden bg-background">
+    <main className="relative min-h-dvh overflow-x-hidden bg-background">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[460px] bg-[radial-gradient(ellipse_at_top,color-mix(in_oklch,var(--primary)_16%,transparent),transparent_62%)]" />
-      <div className="relative mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-5 py-12">
-        <Mark className="size-16" />
-        <h1 className="mt-5 text-4xl font-semibold tracking-tight">Anonymouse</h1>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          Anonymous rooms and private lines. No names, no faces, no resumes.
-        </p>
-        <p className="mt-4 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
-          Preview mode. Any phone number works. The code is{" "}
-          <span className="font-semibold tabular-nums">{DEMO_OTP}</span>.
-        </p>
+      <div className="relative mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 py-12">
+        <div className="my-auto">
+          <Mark className="size-16" />
+          <h1 className="mt-5 text-4xl font-semibold tracking-tight">Anonymouse</h1>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            Anonymous rooms and private lines. No names, no faces, no resumes.
+          </p>
+          <p className="mt-4 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
+            Preview mode. Any phone number works. The code is{" "}
+            <span className="font-semibold tabular-nums">{DEMO_OTP}</span>.
+          </p>
 
-        {step === "contact" ? (
-          <form className="mt-8 space-y-4" onSubmit={(event) => void requestCode(event)}>
-            <div className="space-y-2">
-              <Label htmlFor="contact">Phone number</Label>
-              <Input
-                id="contact"
-                value={contact}
-                onChange={(event) => setContact(event.target.value)}
-                autoComplete="tel"
-                inputMode="tel"
-                placeholder="+1 212 555 0148"
-                className="h-11"
-                aria-invalid={error ? true : undefined}
-                required
-              />
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                Used only to sign you back in on this device. It never appears on a profile, in a room, or in a message.
-              </p>
-            </div>
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
-            <Button type="submit" className="h-11 w-full" disabled={busy}>
-              {busy ? "Sending…" : "Send code"}
-            </Button>
-          </form>
-        ) : (
-          <form
-            className="mt-8 space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (code.length === 6 && !busy) void verify(code);
-            }}
-          >
-            <div className="space-y-2">
-              <Label>Verification code</Label>
-              <OtpBoxes
-                value={code}
-                onChange={(next) => {
-                  setCode(next);
-                  setError(null);
-                }}
-                disabled={busy}
-              />
-              <p className="text-xs text-muted-foreground">This preview does not text anyone. Enter {DEMO_OTP}.</p>
-            </div>
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
-            <Button type="submit" className="h-11 w-full" disabled={busy || code.length !== 6}>
-              {busy ? "Checking…" : "Continue"}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              className="w-full"
-              onClick={() => {
-                setStep("contact");
-                setCode("");
-                setError(null);
+          {step === "contact" ? (
+            <form className="mt-8 space-y-4" onSubmit={(event) => void requestCode(event)}>
+              <div className="space-y-2">
+                <PhoneNumberField
+                  region={region}
+                  national={national}
+                  onRegion={(next) => {
+                    setRegion(next);
+                    setError(null);
+                  }}
+                  onNational={(next) => {
+                    setNational(next);
+                    setError(null);
+                  }}
+                  disabled={busy}
+                  invalid={Boolean(error)}
+                />
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Used only to sign you back in on this device. It never appears on a profile, in a room, or in a message.
+                </p>
+              </div>
+              {error ? (
+                <p id="phone-error" className="text-sm text-destructive">
+                  {error}
+                </p>
+              ) : null}
+              <Button type="submit" className="h-11 w-full" disabled={busy}>
+                {busy ? "Sending…" : "Send code"}
+              </Button>
+            </form>
+          ) : (
+            <form
+              className="mt-8 space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (code.length === 6 && !busy) void verify(code);
               }}
             >
-              Use a different number
-            </Button>
-          </form>
-        )}
-        <p className="mt-8 text-[11px] leading-relaxed text-muted-foreground">
-          Prototype only. Nothing here is advice.
-        </p>
+              <div className="space-y-2">
+                <Label>Verification code</Label>
+                <OtpBoxes
+                  value={code}
+                  onChange={(next) => {
+                    setCode(next);
+                    setError(null);
+                  }}
+                  disabled={busy}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Signing in as <span className="font-medium text-foreground tabular-nums">{phoneLabel}</span>. This preview
+                  does not text anyone. Enter {DEMO_OTP}.
+                </p>
+              </div>
+              {error ? <p className="text-sm text-destructive">{error}</p> : null}
+              <Button type="submit" className="h-11 w-full" disabled={busy || code.length !== 6}>
+                {busy ? "Checking…" : "Continue"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full"
+                onClick={() => {
+                  setStep("contact");
+                  setCode("");
+                  setError(null);
+                }}
+              >
+                Use a different number
+              </Button>
+            </form>
+          )}
+          <p className="mt-8 text-[11px] leading-relaxed text-muted-foreground">
+            Prototype only. Nothing here is advice.
+          </p>
+        </div>
       </div>
     </main>
   );
