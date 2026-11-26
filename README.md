@@ -50,14 +50,14 @@ After the code:
 - **Quote** — one line about you
 - **Hashtags** — optional, freeform (interest, city, craft, role). Pick from the most-used tags or add your own
 
-A few aliases are already friends, with open lines, and three rooms are already joined.
+A few aliases are already friends, and three rooms are already joined. MSG starts empty. A chat shows up there when you message someone, accept a tap, or choose Keep. Leftover demo threads from an older build are dropped on the next visit unless you replied, kept the chat, or accepted the match. You do not need to clear site data.
 
 ## Tabs
 
 - **Chats** — search rooms by words or by hashtag, browse the most-used tags, and create a room. Each room shows its name, description, how many users are in it, and a five-bar heat radar (messages in the last 24 hours). Open a room and the conversation sits beside the list.
 - **Match** — 20 random aliases at a time (alias, quote, hashtags). Type a hashtag, with or without `#`, and the list shows aliases who use it. Refresh draws another set with that tag, or a new random set when the field is empty. Tap asks for a private chat. Twenty taps per local day, shown at the top and again above Refresh. A pending bar counts down for one hour. If they have not accepted by then, the tap drops and that alias stays out of the next shuffles. In this preview, mocks occasionally tap you, and you accept or decline those yourself. A decline or an ended match also stays out of the next passes.
 - **My Rooms** — rooms you joined or created. Open one and you land in the conversation: incoming lines on the left, yours on the right, newest at the bottom. Room details still list the people and their latest line. A name opens their profile. Leave any time.
-- **MSG** — direct messages and accepted Match chats. Rooms are not listed here. Check people and blast one note; the checks stay on after the send. Keep a chat to leave it on the list. Messages still disappear after 3 days, including in a kept chat. A chat you did not keep leaves MSG once it has been quiet for 3 days. End chat still closes the thread. Burn still wipes it. Match threads can also be ended, which keeps that alias out of Match for a while.
+- **MSG** — direct messages you started and Match chats you accepted. Rooms are not listed here, and the inbox is not pre-filled. Check people and blast one note; the checks stay on after the send. Keep a chat to leave it on the list. Messages still disappear after 3 days, including in a kept chat. A chat you did not keep leaves MSG once it has been quiet for 3 days. End chat still closes the thread. Burn still wipes it. Match threads can also be ended, which keeps that alias out of Match for a while.
 - **Friends** — aliases you added. This is separate from tapping someone in Match.
 - **You** — edit the quote, hashtags, and mouse. Phone number stays on the device. Blocked aliases can be restored here.
 

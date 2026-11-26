@@ -3,6 +3,8 @@ import { Check } from "lucide-react";
 import type { ChatAttachment, NewsLink } from "@/backend/types";
 import { FileCard } from "@/components/file-card";
 import { NewsCard } from "@/components/news-card";
+import { Persona } from "@/components/persona";
+import type { MouseAvatar } from "@/lib/avatar";
 import { buildTranscript } from "@/lib/transcript";
 import { formatScriptDay, formatScriptTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -22,6 +24,7 @@ export function ChatTranscript({
   meId,
   aliasFor,
   showAliases,
+  avatarFor,
   conversationId,
   pin,
   now,
@@ -32,6 +35,8 @@ export function ChatTranscript({
   meId: string | null;
   aliasFor: (senderId: string) => string | undefined;
   showAliases: boolean;
+  /** When set, each name in the script gets that profile's mouse, or a letter mark. */
+  avatarFor?: (senderId: string) => MouseAvatar | null | undefined;
   conversationId: string;
   pin: number;
   now: number;
@@ -115,7 +120,16 @@ export function ChatTranscript({
                 </time>
                 <div className="min-w-0">
                   <p className="whitespace-pre-wrap">
-                    {aliasNode}
+                    <span className="inline-flex items-center gap-1 align-middle">
+                      {avatarFor ? (
+                        <Persona
+                          label={alias}
+                          avatar={avatarFor(message.senderId)}
+                          className="size-6 text-[9px]"
+                        />
+                      ) : null}
+                      {aliasNode}
+                    </span>
                     {message.kind === "blast" ? (
                       <span className="mx-1.5 text-[10px] font-medium tracking-[0.14em] text-primary uppercase">Blast</span>
                     ) : null}

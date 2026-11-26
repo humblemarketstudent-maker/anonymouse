@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useFloor } from "@/hooks/use-floor";
-import { aliasError, bioError } from "@/lib/profile";
+import { profileDraftStatus } from "@/lib/profile";
 
 export function MeScreen() {
   const { me, session, users, blockedUsers, topHashtags } = useFloor();
@@ -32,21 +32,25 @@ export function MeScreen() {
 
   if (!me || !session) return null;
   const profile = me;
-  const sameTags = tags.join("|") === profile.hashtags.join("|");
-  const dirty = alias.trim() !== profile.alias || bio.trim() !== profile.bioQuote || !sameTags;
+  const draft = profileDraftStatus({
+    alias,
+    bio,
+    tags,
+    saved: profile,
+    users,
+    selfId: profile.id,
+  });
 
   function save(event: FormEvent) {
     event.preventDefault();
-    const issue = aliasError(alias, users, profile.id) ?? bioError(bio);
-    if (issue) {
-      setError(issue);
-      return;
-    }
+    if (!draft.canSave) return;
     const result = backend.updateProfile({ alias, bioQuote: bio, hashtags: tags });
     if (!result.ok) {
       setError(result.error);
       return;
     }
+    setAlias(alias.trim());
+    setBio(bio.trim());
     setError(null);
     toast.success("Profile updated.");
   }
@@ -78,7 +82,10 @@ export function MeScreen() {
               autoCapitalize="off"
               autoCorrect="off"
               spellCheck={false}
-              onChange={(event) => setAlias(event.target.value)}
+              onChange={(event) => {
+                setAlias(event.target.value);
+                if (error) setError(null);
+              }}
               className="h-10"
             />
           </div>
@@ -88,7 +95,10 @@ export function MeScreen() {
               id="edit-bio"
               value={bio}
               maxLength={80}
-              onChange={(event) => setBio(event.target.value)}
+              onChange={(event) => {
+                setBio(event.target.value);
+                if (error) setError(null);
+              }}
               className="min-h-16"
             />
             <p className="text-right text-[11px] tabular-nums text-muted-foreground">{bio.trim().length}/80</p>
@@ -98,11 +108,19 @@ export function MeScreen() {
             hint="Interest, country, background, role, area. Freeform."
             suggestions={topHashtags.map((item) => item.tag)}
             value={tags}
-            onChange={setTags}
+            onChange={(next) => {
+              setTags(next);
+              if (error) setError(null);
+            }}
             max={8}
           />
+          {draft.error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {draft.error}
+            </p>
+          ) : null}
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          <Button type="submit" disabled={!dirty}>
+          <Button type="submit" disabled={!draft.canSave}>
             Save profile
           </Button>
         </form>
