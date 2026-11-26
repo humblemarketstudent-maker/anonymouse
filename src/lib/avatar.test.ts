@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   BACKGROUNDS,
   BUILDS,
-  COUNTRIES,
   EARS,
   EYES,
   FURS,
@@ -15,7 +14,6 @@ import {
   linkedPaint,
   parseAvatar,
   randomAvatar,
-  type MouseAvatar,
 } from "@/lib/avatar";
 
 function constant(value: number) {
@@ -42,7 +40,7 @@ describe("mouse avatar", () => {
     expect(avatar.whiskers).toBe("Neat Straight");
     expect(avatar.headwear).toBe("None");
     expect(avatar.prop).toBe("None");
-    expect(avatar.flag).toBe("None");
+    expect("flag" in avatar).toBe(false);
   });
 
   it("paints the tail, ears, and snout from the same skin tone", () => {
@@ -70,7 +68,6 @@ describe("mouse avatar", () => {
       eyes: EYES[0],
       snout: SNOUTS[0],
       whiskers: WHISKERS[0],
-      flag: "None",
     });
 
     const samples = 2000;
@@ -83,7 +80,6 @@ describe("mouse avatar", () => {
       eyewear: 0,
       headwear: 0,
       prop: 0,
-      flag: 0,
     };
     let seed = 0x1234abcd;
     const rng = () => {
@@ -115,16 +111,25 @@ describe("mouse avatar", () => {
     }
   });
 
-  it("rejects a broken config and keeps a short guild label", () => {
+  it("rejects a broken config and drops a leftover flag", () => {
     expect(parseAvatar(null).ok).toBe(false);
-    const parsed = parseAvatar({ ...defaultAvatar(), guildLabel: "mice!!desk", guildColor: "nope" });
+    expect(parseAvatar({ ...defaultAvatar(), fur: "Not a fur" }).ok).toBe(false);
+    const parsed = parseAvatar({
+      ...defaultAvatar(),
+      flag: "Country Flag Selector",
+      countryCode: "JP",
+      guildLabel: "mice!!desk",
+      guildColor: "#112233",
+    });
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    expect(parsed.avatar.guildLabel).toBe("micedesk");
-    expect(parsed.avatar.guildColor).toBe("#34d399");
-    const country = parseAvatar({ ...defaultAvatar(), flag: "Country Flag Selector", countryCode: "JP" } satisfies Partial<MouseAvatar>);
-    expect(country.ok).toBe(true);
-    if (country.ok) expect(country.avatar.countryCode).toBe("JP");
-    expect(COUNTRIES.some((item) => item.code === "JP")).toBe(true);
+    expect(parsed.avatar).not.toHaveProperty("flag");
+    expect(parsed.avatar).not.toHaveProperty("countryCode");
+    expect(parsed.avatar).not.toHaveProperty("guildLabel");
+    expect(parsed.avatar).not.toHaveProperty("guildColor");
+    expect(parsed.avatar.fur).toBe("Agouti Brown");
+    const tipped = parseAvatar({ ...defaultAvatar(), tailAccessory: "Mini Flag Tip" });
+    expect(tipped.ok).toBe(true);
+    if (tipped.ok) expect(tipped.avatar.tailAccessory).toBe("None");
   });
 });
