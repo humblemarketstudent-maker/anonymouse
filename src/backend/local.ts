@@ -1275,7 +1275,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       if (!pendingOtp) return { ok: false, error: "Request a code first." };
       const digits = code.replace(/\D/g, "");
       if (digits.length !== 6) return { ok: false, error: "Enter the 6-digit code." };
-      if (digits !== DEMO_OTP) return { ok: false, error: "That code isn't valid. The demo code is 000000." };
+      if (digits !== DEMO_OTP) return { ok: false, error: "That code isn't valid." };
       return openSession(pendingOtp);
     },
     establishSession(contact) {

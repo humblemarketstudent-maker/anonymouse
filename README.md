@@ -42,11 +42,13 @@ The email OTP service is not in this Blueprint. It lives in `render.auth.yaml` s
 
 Any email address is accepted when `VITE_AUTH_API_BASE` is unset. Phone numbers are rejected. There is no country calling-code picker and no password.
 
-**The local code is `000000`.** The sign-in screen advertises it only in that preview. It is hidden once the live auth API is configured, and the auth API rejects it unless `ALLOW_DEMO_OTP=true` on a non-production process.
+The sign-in screen says a one-time code will be sent to that email. It does not show a preview banner, and it does not print the demo code.
+
+**The local code is `000000`.** It still signs you in when `VITE_AUTH_API_BASE` is unset. On the auth API it is accepted only when `ALLOW_DEMO_OTP=true` and `NODE_ENV` is not `production`. Production rejects it, including when that flag is set. The interface does not advertise this code.
 
 Example: `tape@example.com`, then `000000`. `Tape@Example.com` restores the same on-device account.
 
-The email is kept on this device so a refresh can restore the session. It is never shown on a profile, in a room, or in a message, and it is never copied onto `PublicUser`, `me`, `users`, or the directory. This preview does not send an email.
+The email is kept on this device so a refresh can restore the session. It is never shown on a profile, in a room, or in a message, and it is never copied onto `PublicUser`, `me`, `users`, or the directory. With the auth API unset, this preview does not send an email.
 
 After the code:
 
@@ -109,7 +111,7 @@ npm run auth
 VITE_AUTH_API_BASE=http://127.0.0.1:43123
 ```
 
-Restart `npm run dev` after changing that variable. The preview banner and the `000000` hint disappear. The address is normalized to lowercase before the request.
+Restart `npm run dev` after changing that variable. The sign-in copy stays the same. The address is normalized to lowercase before the request. `000000` is not shown in the app.
 
 The service allows one code per email per minute, 5 per email per hour, 10 per IP per hour, and 30 per process per hour. Code checks are capped at 5 per email per 10 minutes and 30 per IP per hour. Those counters are in memory. The email is the identifier where the old limits were per phone number.
 

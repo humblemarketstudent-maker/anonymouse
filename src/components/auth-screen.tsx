@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { backend, liveAuth } from "@/backend";
+import { backend } from "@/backend";
 import { emailSignInError, normalizeEmail } from "@/backend/email";
-import { DEMO_OTP } from "@/backend/types";
 import { Mark } from "@/components/mark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,16 +73,9 @@ export function AuthScreen() {
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
             Anonymous rooms and private lines. No names, no faces, no resumes.
           </p>
-          {liveAuth ? (
-            <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-              We'll email a 6-digit code. It never appears on a profile, in a room, or in a message.
-            </p>
-          ) : (
-            <p className="mt-4 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
-              Preview mode. Any email address works. The code is{" "}
-              <span className="font-semibold tabular-nums">{DEMO_OTP}</span>.
-            </p>
-          )}
+          <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+            We'll send a one-time code to this email.
+          </p>
 
           {step === "contact" ? (
             <form className="mt-8 space-y-4" onSubmit={(event) => void requestCode(event)}>
@@ -141,8 +133,8 @@ export function AuthScreen() {
                   disabled={busy}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Signing in as <span className="font-medium text-foreground">{emailLabel}</span>.{" "}
-                  {liveAuth ? "Enter the 6-digit code from the email." : `This preview does not email anyone. Enter ${DEMO_OTP}.`}
+                  Signing in as <span className="font-medium text-foreground">{emailLabel}</span>. Enter the one-time code
+                  sent to that email.
                 </p>
               </div>
               {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -163,9 +155,6 @@ export function AuthScreen() {
               </Button>
             </form>
           )}
-          <p className="mt-8 text-[11px] leading-relaxed text-muted-foreground">
-            Prototype only. Nothing here is advice.
-          </p>
         </div>
       </div>
     </main>
