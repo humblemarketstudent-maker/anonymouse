@@ -4,7 +4,7 @@ import { defaultAvatar } from "@/lib/avatar";
 import { CONTACT_BLOCKED } from "@/lib/contact";
 import { NEWS_ITEMS } from "@/data/floor";
 import { heatBars } from "@/lib/heat";
-import { createLocalBackend, STORAGE_KEY, type Kv } from "@/backend/local";
+import { createLocalBackend, STORAGE_KEY, threadIsUnsolicited, type Kv } from "@/backend/local";
 import { searchRooms } from "@/lib/search";
 
 function textFile(contents: string, name = "note.txt"): ChatAttachment {
@@ -44,6 +44,13 @@ function setup(storage = memory(), random: () => number = () => 0.2, schedule?: 
       clock += ms;
     },
   };
+}
+
+function openedThread(backend: ReturnType<typeof setup>["backend"], peerId = "usr_byte") {
+  const opened = backend.openThread(peerId);
+  expect(opened.ok).toBe(true);
+  if (!opened.ok) throw new Error("expected a thread");
+  return opened.threadId;
 }
 
 function freshPeer(backend: ReturnType<typeof setup>["backend"]) {
@@ -101,8 +108,9 @@ describe("local anonymouse", () => {
     expect(snap.me?.hashtags).toEqual(["markets", "nyc"]);
     expect(snap.session?.method).toBe("phone");
     expect(snap.friendIds.length).toBe(4);
-    expect(snap.threads).toHaveLength(2);
-    expect(snap.threads.every((thread) => thread.origin === "direct")).toBe(true);
+    expect(snap.threads).toHaveLength(0);
+    expect(snap.messages).toHaveLength(0);
+    expect(json).not.toContain("Still short. Smaller than I sound.");
     expect(snap.joinedRoomIds).toEqual(["room_night", "room_library", "room_market"]);
     expect(snap.incomingTaps.map((tap) => tap.fromId)).toEqual(["usr_keel"]);
     expect(snap.matchPeerIds).toHaveLength(20);
@@ -268,7 +276,8 @@ describe("local anonymouse", () => {
 
   it("ends a chat from the list and does not restore that thread", async () => {
     const { backend } = await signIn();
-    const thread = backend.getSnapshot().threads[0]!;
+    const threadId = openedThread(backend, "usr_byte");
+    const thread = backend.getSnapshot().threads.find((item) => item.id === threadId)!;
     expect(backend.sendMessage(thread.id, "Still with you.").ok).toBe(true);
     expect(backend.endChat(thread.id).ok).toBe(true);
     const after = backend.getSnapshot();
@@ -296,7 +305,7 @@ describe("local anonymouse", () => {
 
   it("deletes messages and room lines on a rolling 3-day clock", async () => {
     const { backend, advance } = await signIn();
-    const threadId = backend.getSnapshot().threads[0]!.id;
+    const threadId = openedThread(backend);
     expect(backend.sendMessage(threadId, "Still here today.").ok).toBe(true);
     expect(backend.postChatter({ body: "Fresh take.", roomId: "room_market" }).ok).toBe(true);
 
@@ -325,6 +334,8 @@ describe("local anonymouse", () => {
   it("purges old and personal messages already stored in the mock", async () => {
     const storage = memory();
     const { backend } = await signIn(storage);
+    const keptId = openedThread(backend, "usr_byte");
+    expect(backend.sendMessage(keptId, "Keep this line.").ok).toBe(true);
     const raw = storage.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!) as {
@@ -384,12 +395,12 @@ describe("local anonymouse", () => {
     expect(json).not.toContain("jane@gmail.com");
     expect(json).not.toContain("t.me/nightowl");
     expect(storage.getItem(STORAGE_KEY)).not.toContain("jane@gmail.com");
-    expect(snap.messages.some((message) => message.body === "Still short. Smaller than I sound.")).toBe(true);
+    expect(snap.messages.some((message) => message.body === "Keep this line.")).toBe(true);
   });
 
   it("refuses personal contact details in rooms and private threads", async () => {
     const { backend } = await signIn();
-    const threadId = backend.getSnapshot().threads[0]!.id;
+    const threadId = openedThread(backend);
     const blocked = [
       "text me 212-555-0199",
       "jane at gmail dot com",
@@ -442,9 +453,8 @@ describe("local anonymouse", () => {
 
   it("blasts the same message into every selected chat, or into none", async () => {
     const { backend } = await signIn();
-    const threads = backend.getSnapshot().threads;
-    expect(threads.length).toBeGreaterThan(1);
-    const ids = threads.map((thread) => thread.id);
+    const ids = [openedThread(backend, "usr_macro"), openedThread(backend, "usr_folio")];
+    expect(backend.getSnapshot().threads.length).toBeGreaterThan(1);
     const before = backend.getSnapshot().messages.length;
     const empty = backend.blastThreads([], "Hello");
     expect(empty.ok).toBe(false);
@@ -468,7 +478,7 @@ describe("local anonymouse", () => {
   it("stores a file and a link card, and drops them with the message", async () => {
     const storage = memory();
     const { backend, advance } = await signIn(storage);
-    const threadId = backend.getSnapshot().threads[0]!.id;
+    const threadId = openedThread(backend);
     const file = textFile("hello", "attachment-token.txt");
     expect(backend.sendMessage(threadId, "See this", { attachment: file }).ok).toBe(true);
     expect(
@@ -539,9 +549,11 @@ describe("local anonymouse", () => {
 
   it("keeps a permanent chat on MSG after the 3-day purge and drops a quiet one", async () => {
     const { backend, advance } = await signIn();
+    const keepId = openedThread(backend, "usr_macro");
+    const dropId = openedThread(backend, "usr_folio");
     const snap = backend.getSnapshot();
-    const keep = snap.threads[0]!;
-    const drop = snap.threads[1]!;
+    const keep = snap.threads.find((thread) => thread.id === keepId)!;
+    const drop = snap.threads.find((thread) => thread.id === dropId)!;
     expect(keep.permanent).toBe(false);
     expect(backend.setThreadPermanent(keep.id, true).ok).toBe(true);
     expect(backend.sendMessage(keep.id, "Stay with me.").ok).toBe(true);
@@ -569,6 +581,103 @@ describe("local anonymouse", () => {
 
     expect(backend.endChat(keep.id).ok).toBe(true);
     expect(backend.getSnapshot().threads.some((thread) => thread.id === keep.id)).toBe(false);
+  });
+
+  it("drops seeded and unsolicited chats, and keeps ones the user joined", async () => {
+    const storage = memory();
+    const { backend } = await signIn(storage);
+    const meId = backend.getSnapshot().me!.id;
+    const raw = JSON.parse(storage.getItem(STORAGE_KEY)!) as {
+      savedAt: number;
+      threads: object[];
+      messages: object[];
+      notifications: object[];
+    };
+    const now = raw.savedAt;
+    raw.threads.push(
+      { id: "thr_seed", a: meId, b: "usr_macro", origin: "direct", updatedAt: now, unread: 1, keptBy: [] },
+      { id: "thr_kept", a: meId, b: "usr_folio", origin: "direct", updatedAt: now, unread: 0, keptBy: [meId] },
+      { id: "thr_real", a: meId, b: "usr_byte", origin: "direct", updatedAt: now, unread: 0, keptBy: [] },
+      { id: "thr_blast", a: meId, b: "usr_lane", origin: "direct", updatedAt: now, unread: 1, keptBy: [] },
+      { id: "thr_match", a: meId, b: "usr_keel", origin: "match", updatedAt: now, unread: 0, keptBy: [] },
+      { id: "thr_open", a: meId, b: "usr_loom", origin: "direct", updatedAt: now, unread: 0, keptBy: [], engagedBy: [meId] },
+    );
+    raw.messages.push(
+      { id: "m1", threadId: "thr_seed", senderId: "usr_macro", body: "You still short the front end, or did someone talk you out of it?", kind: "text", createdAt: now },
+      { id: "m2", threadId: "thr_seed", senderId: meId, body: "Still short. Smaller than I sound.", kind: "text", createdAt: now },
+      { id: "m3", threadId: "thr_kept", senderId: "usr_folio", body: "Read anything this week that wasn't a memo?", kind: "text", createdAt: now },
+      { id: "m4", threadId: "thr_real", senderId: meId, body: "I started this.", kind: "text", createdAt: now },
+      { id: "m5", threadId: "thr_blast", senderId: "usr_lane", body: "Not advice. Also not nothing.", kind: "blast", createdAt: now },
+      { id: "m6", threadId: "thr_match", senderId: "usr_keel", body: "You tapped. I'm here.", kind: "text", createdAt: now },
+    );
+    raw.notifications.push({
+      id: "n1",
+      userId: meId,
+      title: "MacroMouse",
+      body: "Respect. The loud version of that trade is the one that gets hurt.",
+      threadId: "thr_seed",
+      createdAt: now,
+      read: false,
+    });
+    storage.setItem(STORAGE_KEY, JSON.stringify(raw));
+
+    const restored = setup(storage).backend;
+    const ids = restored.getSnapshot().threads.map((thread) => thread.id).sort();
+    expect(ids).toEqual(["thr_kept", "thr_match", "thr_open", "thr_real"]);
+    const stored = storage.getItem(STORAGE_KEY) ?? "";
+    expect(stored).not.toContain("You still short the front end");
+    expect(stored).not.toContain("Respect. The loud version");
+    expect(stored).not.toContain("thr_blast");
+    expect(restored.getSnapshot().messages.some((message) => message.body === "I started this.")).toBe(true);
+    expect(threadIsUnsolicited(
+      { a: meId, b: "usr_lane", origin: "direct", keptBy: [], engagedBy: [] },
+      [{ senderId: "usr_lane", body: "Not advice. Also not nothing.", kind: "blast" }],
+      new Set([meId]),
+    )).toBe(true);
+  });
+
+  it("does not invent a private chat from the live timer", async () => {
+    const queued: { fn: (() => void) | null } = { fn: null };
+    const storage = memory();
+    let clock = 1_700_000_000_000;
+    const backend = createLocalBackend({
+      storage,
+      now: () => clock,
+      random: () => 0.7,
+      schedule: (fn) => {
+        queued.fn = fn;
+        return () => {
+          if (queued.fn === fn) queued.fn = null;
+        };
+      },
+    });
+    await backend.requestOtp({ contact: "+1 212 555 0148" });
+    await backend.verifyOtp("000000");
+    expect(backend.completeProfile({ alias: "TapeMouse", bioQuote: "Flat into the print", hashtags: ["markets"] }).ok).toBe(true);
+    expect(backend.getSnapshot().threads).toHaveLength(0);
+    backend.startLive();
+    queued.fn?.();
+    expect(backend.getSnapshot().threads).toHaveLength(0);
+    const opened = backend.openThread("usr_macro");
+    expect(opened.ok).toBe(true);
+    const before = backend.getSnapshot().messages.length;
+    queued.fn?.();
+    clock += 1;
+    expect(backend.getSnapshot().threads).toHaveLength(1);
+    expect(backend.getSnapshot().messages.length).toBeGreaterThan(before);
+    backend.stopLive();
+  });
+
+  it("puts the signed-in mouse on that profile for MSG to read", async () => {
+    const { backend } = await signIn();
+    const me = backend.getSnapshot().me!;
+    expect(backend.setAvatar(defaultAvatar()).ok).toBe(true);
+    const users = backend.getSnapshot().users;
+    expect(users.find((user) => user.id === me.id)?.avatar?.fur).toBe("Agouti Brown");
+    expect(users.find((user) => user.id === "usr_folio")?.avatar?.headwear).toBe("Beanie");
+    expect(users.find((user) => user.id === "usr_byte")?.avatar ?? null).toBeNull();
+    openedThread(backend, "usr_byte");
+    expect(backend.getSnapshot().threads.map((thread) => thread.peerId)).toEqual(["usr_byte"]);
   });
 
   it("drops an opened chat with no messages after 3 days of inactivity", async () => {

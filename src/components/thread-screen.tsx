@@ -154,6 +154,7 @@ export function ThreadScreen({ threadId, backTo = "/msg" }: { threadId: string; 
         messages={lines}
         meId={me.id}
         aliasFor={(senderId) => usersById.get(senderId)?.alias}
+        avatarFor={(senderId) => usersById.get(senderId)?.avatar}
         showAliases={false}
         conversationId={thread.id}
         pin={pin}

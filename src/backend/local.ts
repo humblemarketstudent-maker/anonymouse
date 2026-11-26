@@ -62,6 +62,8 @@ interface ThreadRec {
   unread: number;
   /** User ids who keep this chat on their MSG list after it goes quiet. */
   keptBy: string[];
+  /** User ids who started, accepted, sent in, or re-opened this chat. */
+  engagedBy: string[];
 }
 
 interface NotificationRec extends AppNotification {
@@ -220,6 +222,68 @@ function normalizePhone(contact: string): string | null {
   return `+${digits}`;
 }
 
+/**
+ * Older builds planted demo 1:1 threads at sign-in and also invented blasts
+ * into chats the user had never opened. A thread stays when the person
+ * kept it, accepted it, sent their own line, or re-opened it.
+ */
+export function threadIsUnsolicited(
+  thread: { a: string; b: string; origin: ThreadOrigin; keptBy: string[]; engagedBy?: string[] },
+  lines: { senderId: string; body: string; kind?: "text" | "blast" }[],
+  humanIds: ReadonlySet<string>,
+): boolean {
+  if (thread.origin === "match") return false;
+  const humans = [thread.a, thread.b].filter((id) => humanIds.has(id));
+  if (humans.length !== 1) return false;
+  const human = humans[0]!;
+  if (thread.keptBy.includes(human) || thread.engagedBy?.includes(human)) return false;
+  if (lines.length === 0) return false;
+  const peer = thread.a === human ? thread.b : thread.a;
+  const script = SEAT_THREADS.find((item) => item.peerId === peer);
+  const fromMe = new Set(script?.lines.filter((line) => line.from === "me").map((line) => line.body) ?? []);
+  const fromPeer = new Set(script?.lines.filter((line) => line.from === "peer").map((line) => line.body) ?? []);
+  const blasts = new Set<string>(BLAST_LINES);
+  if (lines.some((line) => line.senderId === human && !fromMe.has(line.body))) return false;
+  return lines.every((line) => {
+    if (line.senderId === human) return fromMe.has(line.body);
+    if (line.kind === "blast" && blasts.has(line.body)) return true;
+    return fromPeer.has(line.body);
+  });
+}
+
+function omitUnsolicited(target: State) {
+  const humanIds = new Set(target.accounts.filter((account) => account.contact).map((account) => account.userId));
+  const drop = new Set(
+    target.threads
+      .filter((thread) =>
+        threadIsUnsolicited(
+          thread,
+          target.messages.filter((message) => message.threadId === thread.id),
+          humanIds,
+        ),
+      )
+      .map((thread) => thread.id),
+  );
+  for (const thread of target.threads) {
+    if (drop.has(thread.id)) continue;
+    const lines = target.messages.filter((message) => message.threadId === thread.id);
+    for (const human of [thread.a, thread.b].filter((id) => humanIds.has(id))) {
+      const peer = thread.a === human ? thread.b : thread.a;
+      const script = SEAT_THREADS.find((item) => item.peerId === peer);
+      const fromMe = new Set(script?.lines.filter((line) => line.from === "me").map((line) => line.body) ?? []);
+      const participated =
+        thread.origin === "match" ||
+        thread.keptBy.includes(human) ||
+        lines.some((line) => line.senderId === human && !fromMe.has(line.body));
+      if (participated && !thread.engagedBy.includes(human)) thread.engagedBy.push(human);
+    }
+  }
+  if (drop.size === 0) return;
+  target.threads = target.threads.filter((thread) => !drop.has(thread.id));
+  target.messages = target.messages.filter((message) => !drop.has(message.threadId));
+  target.notifications = target.notifications.filter((note) => !note.threadId || !drop.has(note.threadId));
+}
+
 function validNews(news: NewsLink | undefined): news is NewsLink {
   if (!news) return false;
   return (
@@ -301,6 +365,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       }
       for (const thread of next.threads) {
         if (!Array.isArray(thread.keptBy)) thread.keptBy = [];
+        if (!Array.isArray(thread.engagedBy)) thread.engagedBy = [];
       }
       const delta = now() - (parsed.savedAt ?? now());
       if (delta > 2000) {
@@ -311,6 +376,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
         }
         shift(next, delta);
       }
+      omitUnsolicited(next);
       return next;
     } catch {
       return seedState();
@@ -743,9 +809,13 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
   function ensureThread(a: string, b: string, origin: ThreadOrigin): ThreadRec {
     const found = findThread(a, b);
     if (found) return found;
-    const thread: ThreadRec = { id: uid("thr"), a, b, origin, updatedAt: now(), unread: 0, keptBy: [] };
+    const thread: ThreadRec = { id: uid("thr"), a, b, origin, updatedAt: now(), unread: 0, keptBy: [], engagedBy: [] };
     state.threads.push(thread);
     return thread;
+  }
+
+  function engage(thread: ThreadRec, userId: string) {
+    if (!thread.engagedBy.includes(userId)) thread.engagedBy.push(userId);
   }
 
   function pushNote(input: {
@@ -865,9 +935,11 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     const existing = findThread(tap.fromId, tap.toId);
     if (existing) {
       tap.threadId = existing.id;
+      engage(existing, tap.toId);
       return { threadId: existing.id, greeted: false };
     }
     const thread = ensureThread(tap.fromId, tap.toId, "match");
+    engage(thread, tap.toId);
     const senderId = tap.fromId.startsWith("usr_") ? tap.fromId : tap.toId;
     const body = MATCH_GREETINGS[Math.floor(random() * MATCH_GREETINGS.length)] ?? MATCH_GREETINGS[0]!;
     addDirect({ thread, senderId, body, kind: "text", notify: true, flash });
@@ -930,37 +1002,6 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     for (const roomId of SEEDED_ROOMS) {
       if (roomById(roomId)) state.memberships.push({ userId, roomId, joinedAt: now() });
     }
-    for (const script of SEAT_THREADS) {
-      const thread = ensureThread(userId, script.peerId, "direct");
-      for (const line of [...script.lines].sort((a, b) => b.minutesAgo - a.minutesAgo)) {
-        const senderId = line.from === "me" ? userId : script.peerId;
-        const createdAt = now() - line.minutesAgo * 60_000;
-        const message: DirectMessage = {
-          id: uid("msg"),
-          threadId: thread.id,
-          senderId,
-          body: line.body,
-          kind: line.blast ? "blast" : "text",
-          news: line.newsIndex != null ? NEWS_ITEMS[line.newsIndex] : undefined,
-          createdAt,
-        };
-        state.messages.push(message);
-        thread.updatedAt = createdAt;
-      }
-      thread.unread = script.unread;
-      const peer = profileById(script.peerId);
-      const last = script.lines.reduce((latest, line) => (line.minutesAgo < latest.minutesAgo ? line : latest), script.lines[0]!);
-      if (peer && last.from === "peer") {
-        pushNote({
-          userId,
-          title: last.blast ? `${peer.alias} blasted you` : peer.alias,
-          body: last.body,
-          threadId: thread.id,
-          peerId: script.peerId,
-          flash: false,
-        });
-      }
-    }
     const incoming = profileById(SEEDED_INCOMING);
     if (incoming && !hasOpenTap(userId, incoming.id)) {
       state.taps.push({
@@ -984,15 +1025,18 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
   function maybeBlast() {
     const profile = me();
     if (!profile) return;
-    const friends = state.friends
-      .filter((friend) => friend.ownerId === profile.id && !isBlocked(profile.id, friend.friendId) && !isMuted(friend.friendId))
-      .map((friend) => friend.friendId)
-      .filter((id) => id.startsWith("usr_"));
-    if (!friends.length) return;
-    const peerId = friends[Math.floor(random() * friends.length)]!;
+    const candidates = state.threads.filter((thread) => {
+      if (thread.a !== profile.id && thread.b !== profile.id) return false;
+      const peerId = thread.a === profile.id ? thread.b : thread.a;
+      if (!peerId.startsWith("usr_") || !isFriend(profile.id, peerId)) return false;
+      if (isBlocked(profile.id, peerId) || isMuted(peerId)) return false;
+      return thread.origin === "match" || thread.keptBy.includes(profile.id) || thread.engagedBy.includes(profile.id);
+    });
+    if (!candidates.length) return;
+    const thread = candidates[Math.floor(random() * candidates.length)]!;
+    const peerId = thread.a === profile.id ? thread.b : thread.a;
     const news = NEWS_ITEMS[Math.floor(random() * NEWS_ITEMS.length)];
     const body = BLAST_LINES[Math.floor(random() * BLAST_LINES.length)] ?? BLAST_LINES[0]!;
-    const thread = ensureThread(profile.id, peerId, "direct");
     addDirect({ thread, senderId: peerId, body, kind: "blast", news, notify: true, flash: false });
   }
 
@@ -1275,6 +1319,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       trimChannel(input.roomId);
       for (const friendId of blastIds) {
         const thread = ensureThread(profile.id, friendId, "direct");
+        engage(thread, profile.id);
         addDirect({
           thread,
           senderId: profile.id,
@@ -1298,6 +1343,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       }
       const peerId = thread.a === profile.id ? thread.b : thread.a;
       if (isBlocked(profile.id, peerId)) return { ok: false, error: "Unblock this alias before you message them." };
+      engage(thread, profile.id);
       const composed = composeMessage({
         body: raw,
         news: extras?.news,
@@ -1341,6 +1387,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
         threads.push(thread);
       }
       for (const thread of threads) {
+        engage(thread, profile.id);
         addDirect({ thread, senderId: profile.id, body, kind: "blast", notify: false, flash: false });
       }
       emit();
@@ -1368,6 +1415,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       if (!peer) return { ok: false, error: "That alias isn't here." };
       if (isBlocked(profile.id, peerId)) return { ok: false, error: "Unblock this alias before you message them." };
       const thread = ensureThread(profile.id, peerId, "direct");
+      engage(thread, profile.id);
       if (!threadIsListed(thread, profile.id)) thread.updatedAt = now();
       emit();
       return { ok: true, threadId: thread.id };
@@ -1389,8 +1437,10 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
         return { ok: false, error: "That conversation is gone." };
       }
       const kept = new Set(thread.keptBy);
-      if (permanent) kept.add(profile.id);
-      else kept.delete(profile.id);
+      if (permanent) {
+        kept.add(profile.id);
+        engage(thread, profile.id);
+      } else kept.delete(profile.id);
       thread.keptBy = [...kept];
       emit();
       return { ok: true };
