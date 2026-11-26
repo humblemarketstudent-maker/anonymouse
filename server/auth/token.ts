@@ -12,7 +12,7 @@ function sign(secret: string, body: string): string {
 
 /**
  * Short-lived proof that Verify approved this request.
- * The payload is only a version and a window. It does not carry the phone number.
+ * The payload is only a version and a window. It does not carry the email.
  */
 export function signSession(secret: string, now: number, ttlMs: number): { token: string; expiresAt: number } {
   const expiresAt = now + ttlMs;

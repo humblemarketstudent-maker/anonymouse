@@ -56,7 +56,7 @@ npm run dev
 
 Vite proxies `/api/moderation` to `MODERATION_ORIGIN` (default `http://127.0.0.1:8787`). That value is read by the Vite process only. It is not a `VITE_` variable and it is not compiled into the browser bundle.
 
-Open the app, sign in with any phone and `000000`, then use a room or MSG. Admin is at [/admin](http://127.0.0.1:43123/admin). Paste the admin token. Alerts, the audit log, and quarantined files show session hashes and masked previews. Allow and Remove append a new audit row. They do not edit older rows, and they do not put the file back into a chat.
+Open the app, sign in with any email and `000000`, then use a room or MSG. Admin is at [/admin](http://127.0.0.1:43123/admin). Paste the admin token. Alerts, the audit log, and quarantined files show session hashes and masked previews. Allow and Remove append a new audit row. They do not edit older rows, and they do not put the file back into a chat.
 
 `npm test` covers masking, leak alerts, explicit text and files, scanner-timeout quarantine, and the HTTP agent.
 

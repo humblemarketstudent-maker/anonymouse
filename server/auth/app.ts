@@ -1,9 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { DEMO_OTP } from "../../src/backend/demo-otp.ts";
+import { emailSignInError, normalizeEmail } from "../../src/backend/email.ts";
 import { demoOtpEnabled, sessionReady, twilioReady, type AuthConfig } from "./config.ts";
 import { createLimiter, type Limiter } from "./limits.ts";
 import { signSession } from "./token.ts";
-import { checkSms, startSms } from "./twilio.ts";
+import { checkEmail, startEmail } from "./twilio.ts";
 
 export interface AuthDeps {
   config: AuthConfig;
@@ -11,8 +12,6 @@ export interface AuthDeps {
   now?: () => number;
   limiter?: Limiter;
 }
-
-const E164 = /^\+[1-9]\d{7,14}$/;
 
 function send(res: ServerResponse, status: number, body: unknown, origin: string) {
   const headers: Record<string, string> = {
@@ -68,7 +67,7 @@ async function readJson(req: IncomingMessage, max: number): Promise<unknown> {
 
 function asContact(value: unknown): string {
   if (typeof value !== "string") return "";
-  return value.trim().slice(0, 32);
+  return value.trim().slice(0, 320);
 }
 
 function digits(value: unknown): string {
@@ -89,25 +88,22 @@ export function createApp(deps: AuthDeps) {
 
   async function requestOtp(req: IncomingMessage, res: ServerResponse, origin: string) {
     if (!sessionReady(config)) {
-      send(res, 503, { ok: false, error: "Phone sign-in is not available right now." }, origin);
+      send(res, 503, { ok: false, error: "Email sign-in is not available right now." }, origin);
       return;
     }
     const body = (await readJson(req, config.maxBodyBytes)) as Record<string, unknown>;
-    const contact = asContact(body?.contact);
-    if (contact.includes("@")) {
-      send(res, 400, { ok: false, error: "Use a phone number. Email sign-in isn't available." }, origin);
-      return;
-    }
-    if (!E164.test(contact)) {
-      send(res, 400, { ok: false, error: "Enter a phone number in international format." }, origin);
+    const raw = asContact(body?.contact);
+    const contact = normalizeEmail(raw);
+    if (!contact) {
+      send(res, 400, { ok: false, error: emailSignInError(raw) }, origin);
       return;
     }
     const demo = demoOtpEnabled(config);
     if (!demo && !twilioReady(config)) {
-      send(res, 503, { ok: false, error: "Phone sign-in is not available right now." }, origin);
+      send(res, 503, { ok: false, error: "Email sign-in is not available right now." }, origin);
       return;
     }
-    const limited = limiter.takeSms(contact, clientIp(req), now());
+    const limited = limiter.takeSend(contact, clientIp(req), now());
     if (limited) {
       send(res, 429, { ok: false, error: limited }, origin);
       return;
@@ -116,15 +112,15 @@ export function createApp(deps: AuthDeps) {
       send(res, 200, { ok: true }, origin);
       return;
     }
-    const started = await startSms(config, contact, fetchImpl);
+    const started = await startEmail(config, contact, fetchImpl);
     if (!started.ok || (started.verifyStatus !== "pending" && started.verifyStatus !== "approved")) {
       const status = started.status === 429 ? 429 : started.status === 401 || started.status === 403 || started.status === 0 ? 503 : 400;
       const error =
         status === 429
-          ? "Too many texts were requested. Wait and try again."
+          ? "Too many codes were requested. Wait and try again."
           : status === 503
-            ? "Phone sign-in is not available right now."
-            : "That number couldn't be texted. Check it and try again.";
+            ? "Email sign-in is not available right now."
+            : "That address couldn't be emailed. Check it and try again.";
       send(res, status, { ok: false, error }, origin);
       return;
     }
@@ -133,14 +129,15 @@ export function createApp(deps: AuthDeps) {
 
   async function verifyOtp(req: IncomingMessage, res: ServerResponse, origin: string) {
     if (!sessionReady(config)) {
-      send(res, 503, { ok: false, error: "Phone sign-in is not available right now." }, origin);
+      send(res, 503, { ok: false, error: "Email sign-in is not available right now." }, origin);
       return;
     }
     const body = (await readJson(req, config.maxBodyBytes)) as Record<string, unknown>;
-    const contact = asContact(body?.contact);
+    const raw = asContact(body?.contact);
+    const contact = normalizeEmail(raw);
     const code = digits(body?.code);
-    if (!E164.test(contact)) {
-      send(res, 400, { ok: false, error: "Enter a phone number in international format." }, origin);
+    if (!contact) {
+      send(res, 400, { ok: false, error: emailSignInError(raw) }, origin);
       return;
     }
     if (code.length !== 6) {
@@ -149,7 +146,7 @@ export function createApp(deps: AuthDeps) {
     }
     const demo = demoOtpEnabled(config);
     if (!demo && !twilioReady(config)) {
-      send(res, 503, { ok: false, error: "Phone sign-in is not available right now." }, origin);
+      send(res, 503, { ok: false, error: "Email sign-in is not available right now." }, origin);
       return;
     }
     const limited = limiter.takeCheck(contact, clientIp(req), now());
@@ -170,14 +167,14 @@ export function createApp(deps: AuthDeps) {
       send(res, 400, { ok: false, error: "That code isn't valid." }, origin);
       return;
     }
-    const checked = await checkSms(config, contact, code, fetchImpl);
+    const checked = await checkEmail(config, contact, code, fetchImpl);
     if (!checked.ok || checked.verifyStatus !== "approved") {
       const status = checked.status === 429 ? 429 : checked.status === 401 || checked.status === 403 || checked.status === 0 ? 503 : 400;
       const error =
         status === 429
           ? "Too many attempts. Wait and try again."
           : status === 503
-            ? "Phone sign-in is not available right now."
+            ? "Email sign-in is not available right now."
             : "That code isn't valid.";
       send(res, status, { ok: false, error }, origin);
       return;

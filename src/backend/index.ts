@@ -8,7 +8,7 @@ import type { Backend } from "@/backend/types";
  * Rooms, Match, MSG, friends, taps, and profile completion stay on the
  * local backend. When `VITE_AUTH_API_BASE` is set at build time, only
  * `requestOtp` and `verifyOtp` go to the auth API. Otherwise the demo
- * code is 000000. The phone number is never copied onto the public snapshot.
+ * code is 000000. The email is never copied onto the public snapshot.
  * Do not import a vendor SDK from components — keep it behind the adapter.
  */
 export function liveAuthFrom(authApiBase: string | undefined): boolean {

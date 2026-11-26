@@ -1,4 +1,5 @@
-import { createLocalBackend, normalizePhone, type LocalOptions } from "@/backend/local";
+import { emailSignInError, normalizeEmail } from "@/backend/email";
+import { createLocalBackend, type LocalOptions } from "@/backend/local";
 import type { Backend, Result } from "@/backend/types";
 
 export interface HybridOptions extends LocalOptions {
@@ -17,7 +18,7 @@ function cleanError(payload: unknown, fallback: string): string {
   if (typeof message !== "string") return fallback;
   const trimmed = message.trim();
   if (!trimmed || trimmed.length > 200) return fallback;
-  if (trimmed.includes("000000") || /\+\d{8,}/.test(trimmed)) return fallback;
+  if (trimmed.includes("000000") || trimmed.includes("@") || /\+\d{8,}/.test(trimmed)) return fallback;
   return trimmed;
 }
 
@@ -49,9 +50,9 @@ async function postJson(
 }
 
 /**
- * Local rooms and messages, with phone OTP checked by the auth API.
+ * Local rooms and messages, with email OTP checked by the auth API.
  * A successful check opens the same on-device session as the mock backend.
- * This adapter does not accept 000000 by itself.
+ * The HMAC token is discarded here. This adapter does not accept 000000 by itself.
  */
 export function createHybridBackend(apiBase: string, options: HybridOptions = {}): Backend {
   const local = createLocalBackend(options);
@@ -60,13 +61,8 @@ export function createHybridBackend(apiBase: string, options: HybridOptions = {}
   let pending: string | null = null;
 
   const requestOtp: Backend["requestOtp"] = async (input) => {
-    if (input.contact.trim().includes("@")) {
-      return { ok: false, error: "Use a phone number. Email sign-in isn't available." };
-    }
-    const contact = normalizePhone(input.contact);
-    if (!contact) {
-      return { ok: false, error: "Enter a phone number, at least 8 digits. It never appears on your profile." };
-    }
+    const contact = normalizeEmail(input.contact);
+    if (!contact) return { ok: false, error: emailSignInError(input.contact) };
     const result = await postJson(fetchImpl, apiUrl(base, "/api/auth/request-otp"), { contact }, "Couldn't send a code. Try again.");
     if (!result.ok) {
       pending = null;

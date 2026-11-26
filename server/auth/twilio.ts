@@ -44,18 +44,18 @@ async function postForm(
   }
 }
 
-/** Ask Twilio Verify to text a code. The code stays with Twilio. */
-export function startSms(config: AuthConfig, to: string, fetchImpl: typeof fetch): Promise<TwilioResult> {
+/** Ask Twilio Verify to email a code. The code stays with Twilio. */
+export function startEmail(config: AuthConfig, to: string, fetchImpl: typeof fetch): Promise<TwilioResult> {
   return postForm(
     config,
     `/v2/Services/${config.verifyServiceSid}/Verifications`,
-    { To: to, Channel: "sms" },
+    { To: to, Channel: "email" },
     fetchImpl,
   );
 }
 
-/** Ask Twilio Verify whether this code matches the pending SMS. */
-export function checkSms(config: AuthConfig, to: string, code: string, fetchImpl: typeof fetch): Promise<TwilioResult> {
+/** Ask Twilio Verify whether this code matches the pending email. */
+export function checkEmail(config: AuthConfig, to: string, code: string, fetchImpl: typeof fetch): Promise<TwilioResult> {
   return postForm(
     config,
     `/v2/Services/${config.verifyServiceSid}/VerificationCheck`,

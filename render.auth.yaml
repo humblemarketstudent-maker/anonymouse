@@ -1,7 +1,8 @@
-# Phone OTP only. This is a separate Blueprint from render.yaml.
+# Email OTP only. This is a separate Blueprint from render.yaml.
 # Syncing this file creates anonymouse-auth and does not create the static
 # site or anonymouse-moderation. Do not put Twilio secrets in this file.
-# Set TWILIO_* in the Render dashboard before the first real SMS.
+# Set TWILIO_* in the Render dashboard before the first real email code.
+# The Verify service needs the email channel. This does not rent a phone number.
 # Leave the static site on the other Blueprint until VITE_AUTH_API_BASE
 # is ready for a rebuild. Do not add a /* rewrite here.
 services:

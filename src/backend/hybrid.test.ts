@@ -3,7 +3,6 @@ import { createBackend, liveAuthFrom } from "@/backend";
 import { createHybridBackend } from "@/backend/hybrid";
 import type { Kv } from "@/backend/local";
 import { DEMO_OTP } from "@/backend/types";
-import { callingRegionByIso, toE164 } from "@/lib/calling-codes";
 
 function memory(): Kv {
   const map = new Map<string, string>();
@@ -52,6 +51,11 @@ function apiFetch(allowDemo: boolean) {
   return { seen, fetchImpl };
 }
 
+function publishedProfiles(backend: { getSnapshot(): { me: unknown; users: unknown; directory: unknown } }) {
+  const snap = backend.getSnapshot();
+  return JSON.stringify({ me: snap.me, users: snap.users, directory: snap.directory });
+}
+
 describe("hybrid auth adapter", () => {
   it("keeps the local demo code when the auth API is unset", async () => {
     expect(liveAuthFrom(undefined)).toBe(false);
@@ -65,28 +69,29 @@ describe("hybrid auth adapter", () => {
         throw new Error("network");
       },
     });
-    expect((await backend.requestOtp({ contact: "+12125550148" })).ok).toBe(true);
+    expect((await backend.requestOtp({ contact: "tape@example.com" })).ok).toBe(true);
     const verified = await backend.verifyOtp(DEMO_OTP);
     expect(verified.ok).toBe(true);
     expect(called).toBe(false);
+    expect(publishedProfiles(backend)).not.toContain("tape@example.com");
+    expect(publishedProfiles(backend)).not.toContain("@");
   });
 
-  it("checks the code with the auth API, then restores the local session without publishing the phone", async () => {
+  it("checks the code with the auth API, then restores the local session without publishing the email", async () => {
     const storage = memory();
     const api = apiFetch(false);
-    const hongKong = callingRegionByIso("HK");
-    const parsed = toE164(hongKong!, "9123 4567");
-    expect(parsed.ok).toBe(true);
-    if (!parsed.ok) return;
+    const email = "harbour@example.com";
 
     const backend = createHybridBackend("http://auth.test/", { ...quiet(storage), fetchImpl: api.fetchImpl });
     expect((await backend.verifyOtp("482913")).ok).toBe(false);
-    const requested = await backend.requestOtp({ contact: parsed.e164 });
+    expect((await backend.requestOtp({ contact: "+85291234567" })).ok).toBe(false);
+    expect(api.seen).toHaveLength(0);
+    const requested = await backend.requestOtp({ contact: "  Harbour@Example.com " });
     expect(requested.ok).toBe(true);
     expect(api.seen[0]).toEqual({
       method: "POST",
       url: "http://auth.test/api/auth/request-otp",
-      body: { contact: "+85291234567" },
+      body: { contact: email },
     });
     expect(backend.getSnapshot().session).toBeNull();
 
@@ -102,32 +107,34 @@ describe("hybrid auth adapter", () => {
     expect(api.seen.at(-1)).toEqual({
       method: "POST",
       url: "http://auth.test/api/auth/verify-otp",
-      body: { contact: "+85291234567", code: "482913" },
+      body: { contact: email, code: "482913" },
     });
     expect(backend.completeProfile({ alias: "Harbour", bioQuote: "Quiet on the ferry", hashtags: ["harbour"] }).ok).toBe(true);
     const snap = backend.getSnapshot();
     const published = JSON.stringify({ me: snap.me, users: snap.users, directory: snap.directory });
-    expect(published).not.toContain("85291234567");
-    expect(published).not.toContain("+852");
+    expect(published).not.toContain(email);
+    expect(published).not.toContain("@");
     expect(snap.me?.alias).toBe("Harbour");
-    expect(snap.session?.method).toBe("phone");
+    expect(snap.session?.method).toBe("email");
+    expect(snap.session && JSON.stringify(snap.session)).not.toContain("@");
     expect(backend.createRoom({ name: "Harbour Desk", blurb: "Still local.", hashtags: ["harbour"] }).ok).toBe(true);
 
     backend.signOut();
     const again = createHybridBackend("http://auth.test", { ...quiet(storage), fetchImpl: api.fetchImpl });
-    expect((await again.requestOtp({ contact: parsed.e164 })).ok).toBe(true);
+    expect((await again.requestOtp({ contact: "Harbour@Example.com" })).ok).toBe(true);
     const restored = await again.verifyOtp("482913");
     expect(restored.ok).toBe(true);
     if (!restored.ok) return;
     expect(restored.needsProfile).toBe(false);
     expect(again.getSnapshot().me?.alias).toBe("Harbour");
-    expect(JSON.stringify(again.getSnapshot().directory)).not.toContain("85291234567");
+    expect(JSON.stringify(again.getSnapshot().directory)).not.toContain(email);
+    expect(JSON.stringify(again.getSnapshot().directory)).not.toContain("@");
   });
 
   it("does not open a session when the auth API approves a code without a signed token", async () => {
     const fetchImpl: typeof fetch = async () => jsonResponse(200, { ok: true });
     const backend = createHybridBackend("http://auth.test", { ...quiet(memory()), fetchImpl });
-    expect((await backend.requestOtp({ contact: "+12125550148" })).ok).toBe(true);
+    expect((await backend.requestOtp({ contact: "tape@example.com" })).ok).toBe(true);
     const verified = await backend.verifyOtp("482913");
     expect(verified.ok).toBe(false);
     expect(backend.getSnapshot().session).toBeNull();
@@ -137,12 +144,22 @@ describe("hybrid auth adapter", () => {
   it("accepts 000000 only when the auth API itself accepts it", async () => {
     const api = apiFetch(true);
     const backend = createHybridBackend("http://auth.test", { ...quiet(memory()), fetchImpl: api.fetchImpl });
-    expect((await backend.requestOtp({ contact: "+12125550148" })).ok).toBe(true);
+    expect((await backend.requestOtp({ contact: "tape@example.com" })).ok).toBe(true);
     const verified = await backend.verifyOtp(DEMO_OTP);
     expect(verified.ok).toBe(true);
-    expect(backend.getSnapshot().session?.method).toBe("phone");
-    expect(JSON.stringify({ me: backend.getSnapshot().me, users: backend.getSnapshot().users, directory: backend.getSnapshot().directory })).not.toContain(
-      "12125550148",
-    );
+    expect(backend.getSnapshot().session?.method).toBe("email");
+    expect(publishedProfiles(backend)).not.toContain("tape@example.com");
+    expect(publishedProfiles(backend)).not.toContain("@");
+  });
+
+  it("drops an upstream error that echoes the email", async () => {
+    const fetchImpl: typeof fetch = async () => jsonResponse(400, { ok: false, error: "no such mailbox tape@example.com" });
+    const backend = createHybridBackend("http://auth.test", { ...quiet(memory()), fetchImpl });
+    const result = await backend.requestOtp({ contact: "tape@example.com" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).not.toContain("tape@example.com");
+      expect(result.error).not.toContain("@");
+    }
   });
 });

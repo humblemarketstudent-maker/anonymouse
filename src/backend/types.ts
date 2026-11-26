@@ -26,6 +26,7 @@ export const MESSAGE_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 
 export type ThreadOrigin = "direct" | "match";
 
+/** Public profile. The sign-in email is not a field on this object. */
 export interface PublicUser {
   id: string;
   alias: string;
@@ -150,7 +151,7 @@ export interface ProfileInput {
 }
 
 export interface Snapshot {
-  session: { userId: string; method: "phone" } | null;
+  session: { userId: string; method: "email" } | null;
   me: PublicUser | null;
   users: PublicUser[];
   directory: PublicUser[];
