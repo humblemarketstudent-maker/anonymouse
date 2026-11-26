@@ -54,9 +54,6 @@ export function SheetMouse({
         <clipPath id={`${rawId}-badge`}>
           <circle cx="80" cy="80" r="73" />
         </clipPath>
-        <clipPath id={`${rawId}-flag`}>
-          <rect width="32" height="20" rx="1.5" />
-        </clipPath>
       </defs>
       <g clipPath={`url(#${rawId}-badge)`}>
         <SheetBackground avatar={avatar} id={rawId} />
@@ -98,7 +95,6 @@ export function SheetMouse({
           <SheetEarCharm avatar={avatar} />
           {avatar.prop === "None" ? <WavePaw fur={fur.main} pad={earInner} /> : <SheetProp avatar={avatar} />}
         </g>
-        <SheetFlag avatar={avatar} clipId={`${rawId}-flag`} />
       </g>
       <circle cx="80" cy="80" r="73" fill="none" stroke={INK} strokeWidth="5" />
     </svg>
@@ -224,11 +220,7 @@ function SheetTailCharm({ avatar }: { avatar: MouseAvatarConfig }) {
       </g>
     );
   }
-  return (
-    <g>
-      <polygon points={`${x},${y - 10} ${x + 10},${y - 6} ${x},${y - 2}`} fill="#34d399" stroke={INK} strokeWidth="1" />
-    </g>
-  );
+  return null;
 }
 
 function Scruff({ color }: { color: string }) {
@@ -767,107 +759,3 @@ function SheetProp({ avatar }: { avatar: MouseAvatarConfig }) {
   );
 }
 
-function SheetFlag({ avatar, clipId }: { avatar: MouseAvatarConfig; clipId: string }) {
-  if (avatar.flag === "None") return null;
-  return (
-    <g transform="translate(18 108)">
-      <line x1="2" y1="0" x2="2" y2="36" stroke="#c4b59a" strokeWidth="2" strokeLinecap="round" />
-      <g transform="translate(4 0)" clipPath={`url(#${clipId})`}>
-        <FlagCloth avatar={avatar} />
-      </g>
-    </g>
-  );
-}
-
-function FlagCloth({ avatar }: { avatar: MouseAvatarConfig }) {
-  const kind = avatar.flag;
-  if (kind === "Jolly Roger") {
-    return (
-      <g>
-        <rect width="32" height="20" fill="#16191e" />
-        <circle cx="16" cy="8" r="4" fill="#f7f4ee" />
-        <path d="M12 15 H20 M14 13 L16 17 L18 13" stroke="#f7f4ee" strokeWidth="1.2" fill="none" />
-      </g>
-    );
-  }
-  if (kind === "Checkered Racing") {
-    const cells = [];
-    for (let row = 0; row < 4; row += 1) {
-      for (let col = 0; col < 6; col += 1) {
-        cells.push(<rect key={`${row}-${col}`} x={col * 5.4} y={row * 5} width="5.4" height="5" fill={(row + col) % 2 === 0 ? "#16191e" : "#f7f4ee"} />);
-      }
-    }
-    return <g>{cells}</g>;
-  }
-  if (kind === "White Surrender") return <rect width="32" height="20" fill="#f7f4ee" stroke="#d9d3c7" />;
-  if (kind === "Rainbow Pride") {
-    const colors = ["#e11d48", "#f97316", "#eab308", "#22c55e", "#3b82f6", "#8b5cf6"];
-    return (
-      <g>
-        {colors.map((color, index) => (
-          <rect key={color} y={index * (20 / 6)} width="32" height={20 / 6 + 0.2} fill={color} />
-        ))}
-      </g>
-    );
-  }
-  if (kind === "Custom Guild Banner") {
-    const ink = luminance(avatar.guildColor) > 0.62 ? "#1c2430" : "#f8fafc";
-    return (
-      <g>
-        <rect width="32" height="20" fill={avatar.guildColor} />
-        <text x="16" y="13" textAnchor="middle" fontSize="7" fontWeight="700" fill={ink} fontFamily="ui-sans-serif, system-ui, sans-serif">
-          {avatar.guildLabel.slice(0, 8)}
-        </text>
-      </g>
-    );
-  }
-  if (kind === "Country Flag Selector") return <CountryMark code={avatar.countryCode} />;
-  return null;
-}
-
-function CountryMark({ code }: { code: MouseAvatarConfig["countryCode"] }) {
-  if (code === "US") {
-    return (
-      <g>
-        <rect width="32" height="20" fill="#bf0a30" />
-        <rect y="3" width="32" height="2.4" fill="#fff" />
-        <rect y="8" width="32" height="2.4" fill="#fff" />
-        <rect y="13" width="32" height="2.4" fill="#fff" />
-        <rect width="14" height="10" fill="#002868" />
-      </g>
-    );
-  }
-  if (code === "JP") {
-    return (
-      <g>
-        <rect width="32" height="20" fill="#fff" />
-        <circle cx="16" cy="10" r="5" fill="#bc002d" />
-      </g>
-    );
-  }
-  if (code === "FR") return <Tri colors={["#0055a4", "#fff", "#ef4135"]} />;
-  if (code === "DE") return <Tri colors={["#000", "#dd0000", "#ffce00"]} horizontal />;
-  if (code === "IT") return <Tri colors={["#009246", "#fff", "#ce2b37"]} />;
-  return (
-    <g>
-      <rect width="32" height="20" fill="#f4f1ea" stroke={INK} strokeWidth="0.6" />
-      <text x="16" y="13" textAnchor="middle" fontSize="7" fontWeight="700" fill={INK} fontFamily="ui-sans-serif, system-ui, sans-serif">
-        {code}
-      </text>
-    </g>
-  );
-}
-
-function Tri({ colors, horizontal }: { colors: string[]; horizontal?: boolean }) {
-  return (
-    <g>
-      {colors.map((color, index) =>
-        horizontal ? (
-          <rect key={color} y={(20 / 3) * index} width="32" height={20 / 3 + 0.3} fill={color} />
-        ) : (
-          <rect key={color} x={(32 / 3) * index} width={32 / 3 + 0.3} height="20" fill={color} />
-        ),
-      )}
-    </g>
-  );
-}

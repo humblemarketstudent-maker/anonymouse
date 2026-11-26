@@ -1,19 +1,16 @@
 import { toast } from "sonner";
 import { backend } from "@/backend";
+import { cn } from "@/lib/utils";
 import { MouseAvatar as MouseAvatarArt } from "@/components/mouse-avatar";
 import { Persona } from "@/components/persona";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   BACKGROUNDS,
   BUILDS,
-  COUNTRIES,
   EAR_ACCESSORIES,
   EARS,
   EYES,
   EYEWEAR,
-  FLAGS,
   FURS,
   HATS,
   MARKINGS,
@@ -25,7 +22,6 @@ import {
   TAILS,
   TAIL_ACCESSORIES,
   WHISKERS,
-  cleanGuildLabel,
   defaultAvatar,
   randomAvatar,
   type MouseAvatar,
@@ -111,53 +107,14 @@ export function AvatarEditor({ avatar, alias }: { avatar?: MouseAvatar | null; a
         <Layer label="Snout and Mouth" value={draft.snout} options={SNOUTS} onChange={(snout) => patch({ snout })} />
         <Layer label="Whiskers" value={draft.whiskers} options={WHISKERS} onChange={(whiskers) => patch({ whiskers })} />
         <Layer label="Headwear / Hat" value={draft.headwear} options={HATS} onChange={(headwear) => patch({ headwear })} />
-        <Layer label="Handheld Prop" value={draft.prop} options={PROPS} onChange={(prop) => patch({ prop })} />
-        <Layer label="Flag" value={draft.flag} options={FLAGS} onChange={(flag) => patch({ flag })} />
+        <Layer
+          className="sm:col-span-2"
+          label="Handheld Prop"
+          value={draft.prop}
+          options={PROPS}
+          onChange={(prop) => patch({ prop })}
+        />
       </div>
-      {draft.flag === "Custom Guild Banner" ? (
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1">
-            <Label htmlFor="guild-color">Banner color</Label>
-            <input
-              id="guild-color"
-              type="color"
-              value={draft.guildColor}
-              aria-label="Guild banner color"
-              className="h-10 w-full rounded-lg border border-input bg-background px-1"
-              onChange={(event) => patch({ guildColor: event.target.value })}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="guild-label">Banner label</Label>
-            <Input
-              id="guild-label"
-              value={draft.guildLabel}
-              maxLength={8}
-              aria-label="Guild banner label"
-              className="h-10"
-              onChange={(event) => patch({ guildLabel: cleanGuildLabel(event.target.value).slice(0, 8) || draft.guildLabel })}
-            />
-          </div>
-        </div>
-      ) : null}
-      {draft.flag === "Country Flag Selector" ? (
-        <div className="mt-3 space-y-1">
-          <Label htmlFor="country-flag">Country</Label>
-          <select
-            id="country-flag"
-            aria-label="Country flag"
-            value={draft.countryCode}
-            className="h-10 w-full rounded-lg border border-input bg-background px-2 text-sm"
-            onChange={(event) => patch({ countryCode: event.target.value as MouseAvatar["countryCode"] })}
-          >
-            {COUNTRIES.map((country) => (
-              <option key={country.code} value={country.code}>
-                {country.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      ) : null}
       <p className="mt-3 text-[11px] text-muted-foreground">
         Build, fur, and skin are the body layer. Optional layers can stay on None.
       </p>
@@ -170,14 +127,16 @@ function Layer<T extends string>({
   value,
   options,
   onChange,
+  className,
 }: {
   label: string;
   value: T;
   options: readonly T[];
   onChange: (value: T) => void;
+  className?: string;
 }) {
   return (
-    <label className="block space-y-1">
+    <label className={cn("block space-y-1", className)}>
       <span className="text-xs text-muted-foreground">{label}</span>
       <select
         aria-label={label}

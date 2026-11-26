@@ -29,7 +29,6 @@ export const TAIL_ACCESSORIES = [
   "Tiny Brass Bell",
   "Bandage Wrap",
   "Spiked Cuff",
-  "Mini Flag Tip",
 ] as const;
 
 export const BUILDS = ["Standard", "Chonky", "Sleek", "Scruffy"] as const;
@@ -131,54 +130,6 @@ export const PROPS = [
   "Briefcase",
 ] as const;
 
-export const FLAGS = [
-  "None",
-  "Jolly Roger",
-  "Checkered Racing",
-  "White Surrender",
-  "Rainbow Pride",
-  "Custom Guild Banner",
-  "Country Flag Selector",
-] as const;
-
-export const COUNTRIES = [
-  { code: "US", name: "United States" },
-  { code: "GB", name: "United Kingdom" },
-  { code: "FR", name: "France" },
-  { code: "DE", name: "Germany" },
-  { code: "IT", name: "Italy" },
-  { code: "ES", name: "Spain" },
-  { code: "PT", name: "Portugal" },
-  { code: "NL", name: "Netherlands" },
-  { code: "BE", name: "Belgium" },
-  { code: "CH", name: "Switzerland" },
-  { code: "SE", name: "Sweden" },
-  { code: "NO", name: "Norway" },
-  { code: "DK", name: "Denmark" },
-  { code: "FI", name: "Finland" },
-  { code: "IE", name: "Ireland" },
-  { code: "PL", name: "Poland" },
-  { code: "UA", name: "Ukraine" },
-  { code: "GR", name: "Greece" },
-  { code: "TR", name: "Turkey" },
-  { code: "JP", name: "Japan" },
-  { code: "CN", name: "China" },
-  { code: "KR", name: "South Korea" },
-  { code: "IN", name: "India" },
-  { code: "SG", name: "Singapore" },
-  { code: "AU", name: "Australia" },
-  { code: "NZ", name: "New Zealand" },
-  { code: "CA", name: "Canada" },
-  { code: "MX", name: "Mexico" },
-  { code: "BR", name: "Brazil" },
-  { code: "AR", name: "Argentina" },
-  { code: "ZA", name: "South Africa" },
-  { code: "NG", name: "Nigeria" },
-  { code: "EG", name: "Egypt" },
-  { code: "KE", name: "Kenya" },
-  { code: "AE", name: "United Arab Emirates" },
-] as const;
-
 /** Chance an optional layer lands on None while randomizing. */
 export const NONE_CHANCE = {
   tailAccessory: 0.65,
@@ -189,11 +140,7 @@ export const NONE_CHANCE = {
   eyewear: 0.6,
   headwear: 0.5,
   prop: 0.55,
-  flag: 0.7,
 } as const;
-
-export const GUILD_COLORS = ["#34d399", "#1e3a5f", "#f4e7d4", "#e11d48", "#eab308", "#8b5cf6"] as const;
-export const GUILD_LABELS = ["MICE", "DESK", "NIGHT", "OPEN", "QUIET"] as const;
 
 export type Background = (typeof BACKGROUNDS)[number];
 export type Tail = (typeof TAILS)[number];
@@ -212,8 +159,6 @@ export type Snout = (typeof SNOUTS)[number];
 export type Whiskers = (typeof WHISKERS)[number];
 export type Hat = (typeof HATS)[number];
 export type Prop = (typeof PROPS)[number];
-export type FlagStyle = (typeof FLAGS)[number];
-export type CountryCode = (typeof COUNTRIES)[number]["code"];
 
 export interface MouseAvatar {
   background: Background;
@@ -233,10 +178,6 @@ export interface MouseAvatar {
   whiskers: Whiskers;
   headwear: Hat;
   prop: Prop;
-  flag: FlagStyle;
-  guildColor: string;
-  guildLabel: string;
-  countryCode: CountryCode;
 }
 
 export interface SkinPaint {
@@ -288,10 +229,6 @@ export function defaultAvatar(): MouseAvatar {
     whiskers: "Neat Straight",
     headwear: "None",
     prop: "None",
-    flag: "None",
-    guildColor: GUILD_COLORS[0],
-    guildLabel: "MICE",
-    countryCode: "US",
   };
 }
 
@@ -336,19 +273,7 @@ export function randomAvatar(rng: () => number = Math.random): MouseAvatar {
     headwear: pickOptional(rng, NONE_CHANCE.headwear, withoutNone(HATS)),
     prop: pickOptional(rng, NONE_CHANCE.prop, withoutNone(PROPS)),
   };
-  const flag = pickOptional(rng, NONE_CHANCE.flag, withoutNone(FLAGS));
-  avatar.flag = flag;
-  if (flag === "Custom Guild Banner") {
-    avatar.guildColor = pick(rng, GUILD_COLORS);
-    avatar.guildLabel = pick(rng, GUILD_LABELS);
-  } else if (flag === "Country Flag Selector") {
-    avatar.countryCode = pick(rng, COUNTRIES).code;
-  }
   return avatar;
-}
-
-export function cleanGuildLabel(raw: string): string {
-  return raw.replace(/[^A-Za-z0-9 ]/g, "").slice(0, 8).trim();
 }
 
 function isOne<T extends string>(options: readonly T[], value: unknown): value is T {
@@ -357,10 +282,11 @@ function isOne<T extends string>(options: readonly T[], value: unknown): value i
 
 export function parseAvatar(value: unknown): { ok: true; avatar: MouseAvatar } | { ok: false; error: string } {
   if (!value || typeof value !== "object") return { ok: false, error: "That mouse isn't valid." };
-  const raw = value as Partial<MouseAvatar>;
+  const raw = value as Partial<Omit<MouseAvatar, "tailAccessory">> & { tailAccessory?: string };
+  const tailAccessory = raw.tailAccessory === "Mini Flag Tip" ? "None" : raw.tailAccessory;
   if (!isOne(BACKGROUNDS, raw.background)) return { ok: false, error: "Pick a background." };
   if (!isOne(TAILS, raw.tail)) return { ok: false, error: "Pick a tail." };
-  if (!isOne(TAIL_ACCESSORIES, raw.tailAccessory)) return { ok: false, error: "Pick a tail accessory." };
+  if (!isOne(TAIL_ACCESSORIES, tailAccessory)) return { ok: false, error: "Pick a tail accessory." };
   if (!isOne(BUILDS, raw.build)) return { ok: false, error: "Pick a build." };
   if (!isOne(FURS, raw.fur)) return { ok: false, error: "Pick a fur color." };
   if (!isOne(SKINS, raw.skin)) return { ok: false, error: "Pick a skin tone." };
@@ -375,17 +301,12 @@ export function parseAvatar(value: unknown): { ok: true; avatar: MouseAvatar } |
   if (!isOne(WHISKERS, raw.whiskers)) return { ok: false, error: "Pick whiskers." };
   if (!isOne(HATS, raw.headwear)) return { ok: false, error: "Pick a hat." };
   if (!isOne(PROPS, raw.prop)) return { ok: false, error: "Pick a prop." };
-  if (!isOne(FLAGS, raw.flag)) return { ok: false, error: "Pick a flag." };
-  const country = COUNTRIES.find((item) => item.code === raw.countryCode);
-  if (!country) return { ok: false, error: "Pick a country flag." };
-  const guildColor = typeof raw.guildColor === "string" && /^#[0-9a-fA-F]{6}$/.test(raw.guildColor) ? raw.guildColor : GUILD_COLORS[0];
-  const guildLabel = cleanGuildLabel(typeof raw.guildLabel === "string" ? raw.guildLabel : "") || "MICE";
   return {
     ok: true,
     avatar: {
       background: raw.background,
       tail: raw.tail,
-      tailAccessory: raw.tailAccessory,
+      tailAccessory,
       build: raw.build,
       fur: raw.fur,
       skin: raw.skin,
@@ -400,10 +321,6 @@ export function parseAvatar(value: unknown): { ok: true; avatar: MouseAvatar } |
       whiskers: raw.whiskers,
       headwear: raw.headwear,
       prop: raw.prop,
-      flag: raw.flag,
-      guildColor,
-      guildLabel,
-      countryCode: country.code,
     },
   };
 }
@@ -434,7 +351,6 @@ export const DEMO_AVATARS: Record<string, MouseAvatar> = {
     whiskers: "Neat Straight",
     headwear: "None",
     prop: "Wrench",
-    flag: "None",
   },
   usr_folio: {
     ...defaultAvatar(),
@@ -455,6 +371,5 @@ export const DEMO_AVATARS: Record<string, MouseAvatar> = {
     whiskers: "Long Droopy",
     headwear: "Beanie",
     prop: "Rolled Newspaper",
-    flag: "None",
   },
 };
