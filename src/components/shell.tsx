@@ -1,6 +1,6 @@
 import { Bell, Bookmark, CircleUserRound, Hash, Inbox, Sparkles, Users } from "lucide-react";
 import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { backend } from "@/backend";
+import { backend, liveAuth } from "@/backend";
 import { Mark } from "@/components/mark";
 import { ModerationProvider } from "@/components/moderation";
 import { Button } from "@/components/ui/button";
@@ -64,7 +64,7 @@ function Sidebar() {
         ))}
       </nav>
       <p className="px-4 py-4 text-[11px] leading-relaxed text-muted-foreground">
-        Demo. Country code, then 000000.
+        {liveAuth ? "Phone stays on this device." : "Demo. Country code, then 000000."}
       </p>
     </aside>
   );

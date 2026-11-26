@@ -144,6 +144,33 @@ describe("local anonymouse", () => {
     expect(unitedStates.e164).toBe("+12125550148");
   });
 
+  it("opens a local session after the code was already checked", () => {
+    const storage = memory();
+    const { backend } = setup(storage);
+    const created = backend.establishSession("+85291234567");
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(created.needsProfile).toBe(true);
+    expect(JSON.stringify(backend.getSnapshot())).not.toContain("85291234567");
+    expect(backend.getSnapshot().me).toBeNull();
+    expect(
+      backend.completeProfile({ alias: "Harbour", bioQuote: "Quiet on the ferry", hashtags: ["harbour"] }).ok,
+    ).toBe(true);
+    backend.signOut();
+
+    const again = setup(storage).backend;
+    expect(again.getSnapshot().session).toBeNull();
+    const restored = again.establishSession("+852 9123 4567");
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) return;
+    expect(restored.needsProfile).toBe(false);
+    expect(again.getSnapshot().me?.alias).toBe("Harbour");
+    const snap = again.getSnapshot();
+    const json = JSON.stringify({ me: snap.me, users: snap.users, directory: snap.directory });
+    expect(json).not.toContain("85291234567");
+    expect(json).not.toContain("+852");
+  });
+
   it("keeps the phone off the public snapshot and restores the session", async () => {
     const storage = memory();
     const { backend } = await signIn(storage);
