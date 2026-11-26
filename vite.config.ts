@@ -21,6 +21,10 @@ export default defineConfig({
         target: process.env.MODERATION_ORIGIN ?? "http://127.0.0.1:8787",
         changeOrigin: true,
       },
+      "/api/auth": {
+        target: process.env.AUTH_ORIGIN ?? "http://127.0.0.1:8788",
+        changeOrigin: true,
+      },
     },
   },
   preview: {

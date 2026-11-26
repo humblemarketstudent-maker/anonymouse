@@ -1,0 +1,32 @@
+# Phone OTP only. This is a separate Blueprint from render.yaml.
+# Syncing this file creates anonymouse-auth and does not create the static
+# site or anonymouse-moderation. Do not put Twilio secrets in this file.
+# Set TWILIO_* in the Render dashboard before the first real SMS.
+# Leave the static site on the other Blueprint until VITE_AUTH_API_BASE
+# is ready for a rebuild. Do not add a /* rewrite here.
+services:
+  - type: web
+    name: anonymouse-auth
+    runtime: node
+    plan: free
+    autoDeployTrigger: off
+    buildCommand: npm ci
+    startCommand: npm run auth
+    healthCheckPath: /api/auth/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_VERIFY_SERVICE_SID
+        sync: false
+      - key: AUTH_SESSION_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        value: https://anonymouse.lol,https://www.anonymouse.lol,https://anonymouse-eafk.onrender.com
+      - key: ALLOW_DEMO_OTP
+        value: "false"

@@ -3,8 +3,9 @@
  *
  * The sign-in screen picks one of these regions and a national number.
  * `toE164` joins them into `+` + calling code + national digits and that
- * string is what `requestOtp` already accepts. The local backend still
- * checks the demo code 000000. Nothing here sends an SMS.
+ * string is what `requestOtp` already accepts. This module does not send
+ * an SMS. The local mock still checks 000000. When the auth API is
+ * configured, that service sends the text.
  */
 
 export type CallingRegion = {

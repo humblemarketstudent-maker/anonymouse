@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { backend } from "@/backend";
+import { backend, liveAuth } from "@/backend";
 import { DEMO_OTP } from "@/backend/types";
 import { Mark } from "@/components/mark";
 import { PhoneNumberField } from "@/components/phone-number-field";
@@ -76,10 +76,16 @@ export function AuthScreen() {
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
             Anonymous rooms and private lines. No names, no faces, no resumes.
           </p>
-          <p className="mt-4 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
-            Preview mode. Any phone number works. The code is{" "}
-            <span className="font-semibold tabular-nums">{DEMO_OTP}</span>.
-          </p>
+          {liveAuth ? (
+            <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+              We'll text a 6-digit code. It never appears on a profile, in a room, or in a message.
+            </p>
+          ) : (
+            <p className="mt-4 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
+              Preview mode. Any phone number works. The code is{" "}
+              <span className="font-semibold tabular-nums">{DEMO_OTP}</span>.
+            </p>
+          )}
 
           {step === "contact" ? (
             <form className="mt-8 space-y-4" onSubmit={(event) => void requestCode(event)}>
@@ -130,8 +136,8 @@ export function AuthScreen() {
                   disabled={busy}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Signing in as <span className="font-medium text-foreground tabular-nums">{phoneLabel}</span>. This preview
-                  does not text anyone. Enter {DEMO_OTP}.
+                  Signing in as <span className="font-medium text-foreground tabular-nums">{phoneLabel}</span>.{" "}
+                  {liveAuth ? "Enter the 6-digit code from the text." : `This preview does not text anyone. Enter ${DEMO_OTP}.`}
                 </p>
               </div>
               {error ? <p className="text-sm text-destructive">{error}</p> : null}

@@ -2,7 +2,9 @@
 
 Anonymous rooms and private messages. No profile photos, no follower counts, no real names. An alias, a quote, freeform hashtags, group rooms, and direct lines.
 
-This preview runs entirely in the browser. Sign-in, rooms, friends, taps, and messages are stored in `localStorage`. A timer posts new room lines, the occasional blast, and incoming Match taps. No Firebase, Supabase, or SMS provider is required.
+This preview runs entirely in the browser. Sign-in, rooms, friends, taps, and messages are stored in `localStorage`. A timer posts new room lines, the occasional blast, and incoming Match taps. No Firebase, Supabase, or SMS provider is required for that preview.
+
+An optional auth API in `server/auth` can text a real code through Twilio Verify. Rooms, Match, MSG, friends, taps, and profile completion stay on the local backend either way. Leave `VITE_AUTH_API_BASE` unset and the preview code stays `000000`.
 
 ## Run it
 
@@ -34,15 +36,17 @@ The Render MCP `create_static_site` call does not accept route rules. If the sit
 
 Also set `NODE_VERSION` to `22` and `NODE_ENV` to `development` for the build, or devDependencies will be skipped and `npm run build` will fail.
 
+The phone OTP service is not in this Blueprint. It lives in `render.auth.yaml` so syncing the static site does not create it, and syncing the auth Blueprint does not create `anonymouse-moderation` or rewrite this site. See [Live phone OTP](#live-phone-otp).
+
 ## Demo sign-in
 
-Any phone number is accepted. Choose a country calling code, then enter the national number. Email sign-in is not part of the app.
+Any phone number is accepted when `VITE_AUTH_API_BASE` is unset. Choose a country calling code, then enter the national number. Email sign-in is not part of the app.
 
-**The code is `000000`.**
+**The local code is `000000`.** The sign-in screen advertises it only in that preview. It is hidden once the live auth API is configured, and the auth API rejects it unless `ALLOW_DEMO_OTP=true` on a non-production process.
 
 Examples: Hong Kong `+852` and `9123 4567`, or United States `+1` and `212 555 0148`, then `000000`.
 
-The number is kept on this device so a refresh can restore the session. It is never shown on a profile, in a room, or in a message. This preview does not send an SMS.
+The number is kept on this device so a refresh can restore the session. It is never shown on a profile, in a room, or in a message, and it is never copied onto `PublicUser`, `me`, `users`, or the directory. This preview does not send an SMS.
 
 After the code:
 
@@ -65,11 +69,61 @@ Report, block, room posts, news links, and blast-to-friends still work inside ro
 
 ## Swapping in a real backend
 
-UI code talks to the `Backend` interface in `src/backend/types.ts`. The running app is `createLocalBackend()` in `src/backend/index.ts`.
+UI code talks to the `Backend` interface in `src/backend/types.ts`. The running app is chosen in `src/backend/index.ts`.
+
+With `VITE_AUTH_API_BASE` unset, that file uses `createLocalBackend()`. With it set, a thin hybrid sends `requestOtp` and `verifyOtp` to the auth API and then opens the same local session. Rooms, Match, MSG, friends, taps, and profile completion are unchanged.
 
 To use Supabase or Firebase later, implement that same interface and change the factory in `src/backend/index.ts`. Do not import a vendor SDK from components. The public snapshot must keep omitting the phone number.
 
-`npm test` covers phone OTP, session restore, room search, the daily tap limit, accept and decline, burn, and the moderation agent.
+`npm test` covers the local demo code, the hybrid adapter, the auth API, session restore, room search, the daily tap limit, accept and decline, burn, and the moderation agent.
+
+## Live phone OTP
+
+The auth service is Node, in `server/auth`. It exposes:
+
+- `GET /api/auth/health`
+- `POST /api/auth/request-otp` with `{ "contact": "+12125550148" }`
+- `POST /api/auth/verify-otp` with `{ "contact": "+12125550148", "code": "123456" }`
+
+Twilio Verify sends and checks the SMS. This process does not store the code. A successful check returns a short-lived HMAC token. The browser does not keep that token. It creates or restores the local account the same way the demo sign-in does, and the phone stays on that device only.
+
+Run it locally with placeholders, not real secrets, in the environment or in an untracked `.env`:
+
+```bash
+export AUTH_PORT=8788
+export AUTH_SESSION_SECRET=replace-with-a-long-random-secret
+export TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+export TWILIO_AUTH_TOKEN=replace-with-the-twilio-auth-token
+export TWILIO_VERIFY_SERVICE_SID=VAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+export CORS_ORIGIN=https://anonymouse.lol,https://www.anonymouse.lol,https://anonymouse-eafk.onrender.com
+export ALLOW_DEMO_OTP=false
+npm run auth
+```
+
+`AUTH_SESSION_SECRET` must be at least 16 characters. `ALLOW_DEMO_OTP` defaults to false. Set it to `true` only when `NODE_ENV` is not `production` if you need to exercise the client without Twilio. Production ignores that flag, including on Render where `NODE_ENV` is `production`.
+
+`npm run dev` proxies `/api/auth` to `AUTH_ORIGIN` (default `http://127.0.0.1:8788`). Point the SPA at the dev server so the browser stays same-origin:
+
+```bash
+# .env, which Vite reads. Do not commit it.
+VITE_AUTH_API_BASE=http://127.0.0.1:43123
+```
+
+Restart `npm run dev` after changing that variable. The preview banner and the `000000` hint disappear. Country codes still build an E.164 number before the request.
+
+The service allows one SMS per number per minute, 5 per number per hour, 10 per IP per hour, and 30 per process per hour. Code checks are capped at 5 per number per 10 minutes and 30 per IP per hour. Those counters are in memory.
+
+`render.auth.yaml` is a separate Blueprint for a service named `anonymouse-auth`. Syncing it does not create the static site or `anonymouse-moderation`, and it does not change DNS. Deploys from that file are off until you turn them on. The existing `render.yaml` is unchanged.
+
+Go-live still needs all of the following, after you confirm:
+
+- an upgraded Twilio account that can send Verify SMS
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID`, and `AUTH_SESSION_SECRET` set on the Render service (none of these belong in Vite or in git)
+- `ALLOW_DEMO_OTP=false`
+- a static-site rebuild with `VITE_AUTH_API_BASE` set to the auth service origin
+- a deploy of that rebuild, and of the auth service, only when you ask for it
+
+The free Render instance sleeps after a quiet period, so the first code request after that can be slow. Nothing in this repo sends an SMS until those environment variables exist and the service is running.
 
 ## Moderation
 

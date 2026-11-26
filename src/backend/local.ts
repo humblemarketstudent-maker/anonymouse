@@ -171,6 +171,11 @@ export interface LocalOptions {
 
 export interface LocalBackend extends Backend {
   debug(): { reports: number; contacts: string[] };
+  /**
+   * Create or restore the on-device account after a code has already been checked.
+   * The phone stays on `Account.contact` for this device and is not copied onto the public snapshot.
+   */
+  establishSession(contact: string): Result<{ needsProfile: boolean }>;
 }
 
 function memoryKv(): Kv {
@@ -222,7 +227,7 @@ function cleanText(value: string): string {
   return out.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function normalizePhone(contact: string): string | null {
+export function normalizePhone(contact: string): string | null {
   const trimmed = contact.trim();
   if (!trimmed || trimmed.includes("@")) return null;
   const digits = trimmed.replace(/\D/g, "");
@@ -1205,6 +1210,31 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     };
   }
 
+  function openSession(contact: string): Result<{ needsProfile: boolean }> {
+    const normalized = normalizePhone(contact);
+    if (!normalized) {
+      return { ok: false, error: "Enter a phone number, at least 8 digits. It never appears on your profile." };
+    }
+    const existing = state.accounts.find((account) => account.contact === normalized);
+    if (existing) {
+      state.sessionUserId = existing.userId;
+      pendingOtp = null;
+      emit();
+      return { ok: true, needsProfile: !existing.profile };
+    }
+    const account: Account = {
+      userId: uid("hum"),
+      contact: normalized,
+      profile: null,
+      seated: false,
+    };
+    state.accounts.push(account);
+    state.sessionUserId = account.userId;
+    pendingOtp = null;
+    emit();
+    return { ok: true, needsProfile: true };
+  }
+
   const api: LocalBackend = {
     subscribe(listener) {
       listeners.add(listener);
@@ -1241,24 +1271,10 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       const digits = code.replace(/\D/g, "");
       if (digits.length !== 6) return { ok: false, error: "Enter the 6-digit code." };
       if (digits !== DEMO_OTP) return { ok: false, error: "That code isn't valid. The demo code is 000000." };
-      const existing = state.accounts.find((account) => account.contact === pendingOtp);
-      if (existing) {
-        state.sessionUserId = existing.userId;
-        pendingOtp = null;
-        emit();
-        return { ok: true, needsProfile: !existing.profile };
-      }
-      const account: Account = {
-        userId: uid("hum"),
-        contact: pendingOtp,
-        profile: null,
-        seated: false,
-      };
-      state.accounts.push(account);
-      state.sessionUserId = account.userId;
-      pendingOtp = null;
-      emit();
-      return { ok: true, needsProfile: true };
+      return openSession(pendingOtp);
+    },
+    establishSession(contact) {
+      return openSession(contact);
     },
     completeProfile(input) {
       const account = sessionAccount();
