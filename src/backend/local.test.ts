@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { MESSAGE_TTL_MS, type ChatAttachment } from "@/backend/types";
-import { callingRegionByIso, toE164 } from "@/lib/calling-codes";
 import { defaultAvatar } from "@/lib/avatar";
 import { NOTICE } from "@/moderation/notices";
 import { NEWS_ITEMS } from "@/data/floor";
@@ -70,7 +69,7 @@ async function signIn(storage = memory(), alias = "TapeMouse", random?: () => nu
       return () => undefined;
     } : undefined,
   );
-  const request = await rig.backend.requestOtp({ contact: "+1 212 555 0148" });
+  const request = await rig.backend.requestOtp({ contact: "tape@example.com" });
   expect(request.ok).toBe(true);
   const verified = await rig.backend.verifyOtp("000000");
   expect(verified.ok).toBe(true);
@@ -86,35 +85,32 @@ async function signIn(storage = memory(), alias = "TapeMouse", random?: () => nu
 }
 
 describe("local anonymouse", () => {
-  it("accepts a phone and the demo code, and rejects email", async () => {
+  it("accepts an email and the demo code, and rejects a phone number", async () => {
     const { backend } = setup();
     expect((await backend.verifyOtp("000000")).ok).toBe(false);
-    expect((await backend.requestOtp({ contact: "floor@anonymouse.app" })).ok).toBe(false);
+    expect((await backend.requestOtp({ contact: "+1 (212) 555-0148" })).ok).toBe(false);
     expect((await backend.requestOtp({ contact: "555" })).ok).toBe(false);
-    await backend.requestOtp({ contact: "+1 (212) 555-0148" });
+    expect((await backend.requestOtp({ contact: "not-an-email" })).ok).toBe(false);
+    await backend.requestOtp({ contact: "  Floor@Anonymouse.app " });
     expect((await backend.verifyOtp("123456")).ok).toBe(false);
     const right = await backend.verifyOtp("000000");
     expect(right.ok).toBe(true);
+    expect(backend.debug().contacts).toEqual(["floor@anonymouse.app"]);
   });
 
-  it("signs in with a country code plus national number and the demo code", async () => {
+  it("signs in with a normalized email and restores the same account", async () => {
     const storage = memory();
-    const hongKong = callingRegionByIso("HK");
-    expect(hongKong?.dial).toBe("852");
-    const parsed = toE164(hongKong!, "9123 4567");
-    expect(parsed.ok).toBe(true);
-    if (!parsed.ok) return;
-    expect(parsed.e164).toBe("+85291234567");
-
+    const email = "harbour@example.com";
     const { backend } = setup(storage);
-    expect((await backend.requestOtp({ contact: parsed.e164 })).ok).toBe(true);
+    expect((await backend.requestOtp({ contact: "Harbour@Example.com" })).ok).toBe(true);
     expect((await backend.verifyOtp("123456")).ok).toBe(false);
     const verified = await backend.verifyOtp("000000");
     expect(verified.ok).toBe(true);
     if (!verified.ok) return;
     expect(verified.needsProfile).toBe(true);
-    expect(backend.debug().contacts).toEqual(["+85291234567"]);
-    expect(JSON.stringify(backend.getSnapshot())).not.toContain("85291234567");
+    expect(backend.debug().contacts).toEqual([email]);
+    expect(JSON.stringify(backend.getSnapshot())).not.toContain(email);
+    expect(JSON.stringify(backend.getSnapshot())).not.toContain("@");
 
     expect(
       backend.completeProfile({
@@ -127,32 +123,27 @@ describe("local anonymouse", () => {
 
     const again = setup(storage).backend;
     expect(again.getSnapshot().session).toBeNull();
-    const spaced = toE164(hongKong!, "+852 9123 4567");
-    expect(spaced.ok).toBe(true);
-    if (!spaced.ok) return;
-    expect(spaced.e164).toBe("+85291234567");
-    expect((await again.requestOtp({ contact: spaced.e164 })).ok).toBe(true);
+    expect((await again.requestOtp({ contact: "  HARBOUR@example.com  " })).ok).toBe(true);
     const restored = await again.verifyOtp("000000");
     expect(restored.ok).toBe(true);
     if (restored.ok) expect(restored.needsProfile).toBe(false);
     expect(again.getSnapshot().me?.alias).toBe("Harbour");
-    expect(JSON.stringify(again.getSnapshot())).not.toContain("85291234567");
-
-    const unitedStates = toE164(callingRegionByIso("US")!, "(212) 555-0148");
-    expect(unitedStates.ok).toBe(true);
-    if (!unitedStates.ok) return;
-    expect(unitedStates.e164).toBe("+12125550148");
+    expect(JSON.stringify(again.getSnapshot())).not.toContain(email);
+    expect(JSON.stringify(again.getSnapshot())).not.toContain("@");
+    expect((await again.requestOtp({ contact: "+12125550148" })).ok).toBe(false);
   });
 
   it("opens a local session after the code was already checked", () => {
     const storage = memory();
+    const email = "harbour@example.com";
     const { backend } = setup(storage);
-    const created = backend.establishSession("+85291234567");
+    const created = backend.establishSession("Harbour@Example.com");
     expect(created.ok).toBe(true);
     if (!created.ok) return;
     expect(created.needsProfile).toBe(true);
-    expect(JSON.stringify(backend.getSnapshot())).not.toContain("85291234567");
+    expect(JSON.stringify(backend.getSnapshot())).not.toContain(email);
     expect(backend.getSnapshot().me).toBeNull();
+    expect(backend.establishSession("+12125550148").ok).toBe(false);
     expect(
       backend.completeProfile({ alias: "Harbour", bioQuote: "Quiet on the ferry", hashtags: ["harbour"] }).ok,
     ).toBe(true);
@@ -160,28 +151,29 @@ describe("local anonymouse", () => {
 
     const again = setup(storage).backend;
     expect(again.getSnapshot().session).toBeNull();
-    const restored = again.establishSession("+852 9123 4567");
+    const restored = again.establishSession("  harbour@example.com ");
     expect(restored.ok).toBe(true);
     if (!restored.ok) return;
     expect(restored.needsProfile).toBe(false);
     expect(again.getSnapshot().me?.alias).toBe("Harbour");
     const snap = again.getSnapshot();
     const json = JSON.stringify({ me: snap.me, users: snap.users, directory: snap.directory });
-    expect(json).not.toContain("85291234567");
-    expect(json).not.toContain("+852");
+    expect(json).not.toContain(email);
+    expect(json).not.toContain("@");
+    expect(snap.session?.method).toBe("email");
   });
 
-  it("keeps the phone off the public snapshot and restores the session", async () => {
+  it("keeps the email off the public snapshot and restores the session", async () => {
     const storage = memory();
     const { backend } = await signIn(storage);
     const snap = backend.getSnapshot();
     const json = JSON.stringify(snap);
-    expect(json).not.toContain("12125550148");
+    expect(json).not.toContain("tape@example.com");
     expect(json).not.toContain("@");
-    expect(backend.debug().contacts).toEqual(["+12125550148"]);
+    expect(backend.debug().contacts).toEqual(["tape@example.com"]);
     expect(snap.me?.alias).toBe("TapeMouse");
     expect(snap.me?.hashtags).toEqual(["markets", "nyc"]);
-    expect(snap.session?.method).toBe("phone");
+    expect(snap.session?.method).toBe("email");
     expect(snap.friendIds.length).toBe(4);
     expect(snap.threads).toHaveLength(0);
     expect(snap.messages).toHaveLength(0);
@@ -200,16 +192,61 @@ describe("local anonymouse", () => {
     expect(restored.getSnapshot().me?.hashtags).toEqual(["markets", "nyc"]);
     expect(restored.getSnapshot().joinedRoomIds).toEqual(snap.joinedRoomIds);
     expect(restored.getSnapshot().incomingTaps).toHaveLength(1);
-    expect(JSON.stringify(restored.getSnapshot())).not.toContain("12125550148");
+    expect(JSON.stringify(restored.getSnapshot())).not.toContain("tape@example.com");
+    expect(JSON.stringify(restored.getSnapshot())).not.toContain("@");
 
     restored.signOut();
     const signedOut = setup(storage).backend;
     expect(signedOut.getSnapshot().session).toBeNull();
-    await signedOut.requestOtp({ contact: "+1 212 555 0148" });
+    await signedOut.requestOtp({ contact: "Tape@Example.com" });
     const again = await signedOut.verifyOtp("000000");
     expect(again.ok).toBe(true);
     if (again.ok) expect(again.needsProfile).toBe(false);
     expect(signedOut.getSnapshot().me?.alias).toBe("TapeMouse");
+  });
+
+  it("keeps a stuffed email off public profile payloads", async () => {
+    const storage = memory();
+    const email = "tape@example.com";
+    await signIn(storage);
+    const raw = JSON.parse(storage.getItem(STORAGE_KEY) ?? "{}") as {
+      accounts: Array<{ contact: string | null; profile: Record<string, unknown> | null }>;
+    };
+    const account = raw.accounts.find((item) => item.contact === email);
+    expect(account?.profile).toBeTruthy();
+    if (!account?.profile) return;
+    account.profile.email = email;
+    account.profile.contact = email;
+    account.profile.phone = "+12125550148";
+    storage.setItem(STORAGE_KEY, JSON.stringify(raw));
+
+    const reloaded = setup(storage).backend;
+    const snap = reloaded.getSnapshot();
+    const allowed = new Set(["id", "alias", "bioQuote", "hashtags", "joinedAt", "avatar"]);
+    for (const user of [snap.me, ...snap.users, ...snap.directory, ...snap.blockedUsers]) {
+      if (!user) continue;
+      for (const key of Object.keys(user)) expect(allowed.has(key), key).toBe(true);
+    }
+    const published = JSON.stringify({
+      me: snap.me,
+      users: snap.users,
+      directory: snap.directory,
+      blockedUsers: snap.blockedUsers,
+      session: snap.session,
+    });
+    expect(published).not.toContain(email);
+    expect(published).not.toContain("@");
+    expect(published).not.toContain("12125550148");
+    expect(snap.session).toEqual({ userId: snap.me?.id, method: "email" });
+    expect(reloaded.debug().contacts).toContain(email);
+    const stored = JSON.parse(storage.getItem(STORAGE_KEY) ?? "{}") as {
+      accounts: Array<{ contact: string | null; profile: Record<string, unknown> | null }>;
+    };
+    const kept = stored.accounts.find((item) => item.contact === email);
+    expect(kept?.profile && "email" in kept.profile).toBe(false);
+    expect(kept?.profile && "contact" in kept.profile).toBe(false);
+    expect(kept?.profile && "phone" in kept.profile).toBe(false);
+    expect(kept?.contact).toBe(email);
   });
 
   it("searches rooms by words and hashtags, and keeps a created room", async () => {
@@ -525,7 +562,7 @@ describe("local anonymouse", () => {
 
   it("rejects a taken alias", async () => {
     const { backend } = setup();
-    await backend.requestOtp({ contact: "2125550199" });
+    await backend.requestOtp({ contact: "second@example.com" });
     await backend.verifyOtp("000000");
     const taken = backend.completeProfile({
       alias: "MacroMouse",
@@ -742,7 +779,7 @@ describe("local anonymouse", () => {
         };
       },
     });
-    await backend.requestOtp({ contact: "+1 212 555 0148" });
+    await backend.requestOtp({ contact: "tape@example.com" });
     await backend.verifyOtp("000000");
     expect(backend.completeProfile({ alias: "TapeMouse", bioQuote: "Flat into the print", hashtags: ["markets"] }).ok).toBe(true);
     expect(backend.getSnapshot().threads).toHaveLength(0);

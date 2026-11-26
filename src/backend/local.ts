@@ -19,6 +19,7 @@ import {
   type ThreadOrigin,
   type ThreadSummary,
 } from "@/backend/types";
+import { emailSignInError, normalizeEmail } from "@/backend/email";
 import {
   BLAST_LINES,
   LIVE_ROOMS,
@@ -54,6 +55,7 @@ const STORE_LIMIT = 4_500_000;
 
 interface Account {
   userId: string;
+  /** Private sign-in email for this device. Never copied onto a public profile. */
   contact: string | null;
   profile: PublicUser | null;
   seated: boolean;
@@ -173,7 +175,7 @@ export interface LocalBackend extends Backend {
   debug(): { reports: number; contacts: string[] };
   /**
    * Create or restore the on-device account after a code has already been checked.
-   * The phone stays on `Account.contact` for this device and is not copied onto the public snapshot.
+   * The email stays on `Account.contact` for this device and is not copied onto the public snapshot.
    */
   establishSession(contact: string): Result<{ needsProfile: boolean }>;
 }
@@ -227,12 +229,21 @@ function cleanText(value: string): string {
   return out.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-export function normalizePhone(contact: string): string | null {
-  const trimmed = contact.trim();
-  if (!trimmed || trimmed.includes("@")) return null;
-  const digits = trimmed.replace(/\D/g, "");
-  if (digits.length < 8 || digits.length > 15) return null;
-  return `+${digits}`;
+/** Public profile fields only. Drops a sign-in email if one was stuffed onto the profile. */
+export function toPublicUser(profile: PublicUser): PublicUser {
+  const next: PublicUser = {
+    id: profile.id,
+    alias: profile.alias,
+    bioQuote: profile.bioQuote,
+    hashtags: Array.isArray(profile.hashtags) ? [...profile.hashtags] : [],
+    joinedAt: profile.joinedAt,
+  };
+  if (profile.avatar === null) next.avatar = null;
+  else {
+    const avatar = coerceAvatar(profile.avatar);
+    if (avatar) next.avatar = avatar;
+  }
+  return next;
 }
 
 /**
@@ -370,10 +381,9 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       };
       for (const account of next.accounts) {
         if (!account.profile) continue;
-        if (!Array.isArray(account.profile.hashtags)) account.profile.hashtags = [];
-        const avatar = coerceAvatar(account.profile.avatar);
-        if (avatar) account.profile.avatar = avatar;
-        else delete account.profile.avatar;
+        const publicProfile = toPublicUser(account.profile);
+        if (publicProfile.avatar === null) delete publicProfile.avatar;
+        account.profile = publicProfile;
       }
       if (next.sessionUserId && !next.accounts.some((account) => account.userId === next.sessionUserId)) {
         next.sessionUserId = null;
@@ -629,9 +639,9 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
 
   function derive(): Snapshot {
     const account = sessionAccount();
-    const profile = account?.profile ?? null;
+    const profile = account?.profile ? toPublicUser(account.profile) : null;
     const blocked = blockedSet();
-    const users = profiles();
+    const users = profiles().map((user) => toPublicUser(user));
     const directory = users.filter((user) => user.id !== profile?.id && !blocked.has(user.id));
     const blockedUsers = users.filter((user) => blocked.has(user.id));
     const friendIds = profile
@@ -714,7 +724,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
           .sort((a, b) => a.expiresAt - b.expiresAt)
       : [];
     return {
-      session: account ? { userId: account.userId, method: "phone" } : null,
+      session: account ? { userId: account.userId, method: "email" } : null,
       me: profile,
       users,
       directory,
@@ -1211,9 +1221,9 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
   }
 
   function openSession(contact: string): Result<{ needsProfile: boolean }> {
-    const normalized = normalizePhone(contact);
+    const normalized = normalizeEmail(contact);
     if (!normalized) {
-      return { ok: false, error: "Enter a phone number, at least 8 digits. It never appears on your profile." };
+      return { ok: false, error: emailSignInError(contact) };
     }
     const existing = state.accounts.find((account) => account.contact === normalized);
     if (existing) {
@@ -1256,13 +1266,8 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       return snapshot;
     },
     async requestOtp(input) {
-      if (input.contact.trim().includes("@")) {
-        return { ok: false, error: "Use a phone number. Email sign-in isn't available." };
-      }
-      const contact = normalizePhone(input.contact);
-      if (!contact) {
-        return { ok: false, error: "Enter a phone number, at least 8 digits. It never appears on your profile." };
-      }
+      const contact = normalizeEmail(input.contact);
+      if (!contact) return { ok: false, error: emailSignInError(input.contact) };
       pendingOtp = contact;
       return { ok: true };
     },

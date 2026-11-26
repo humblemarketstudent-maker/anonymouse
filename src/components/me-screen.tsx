@@ -68,7 +68,7 @@ export function MeScreen() {
         <p className="mt-2 font-serif text-xl leading-snug text-foreground/90">{profile.bioQuote}</p>
         <Hashtags tags={profile.hashtags} className="mt-3" />
         <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-          Signed in with a phone number on this device. The number stays here and is never placed on your profile, in a room, or in a message.
+          Signed in with an email on this device. The address stays here and is never placed on your profile, in a room, or in a message.
         </p>
         <AvatarEditor avatar={profile.avatar} alias={profile.alias} />
 

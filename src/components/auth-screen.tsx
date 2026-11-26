@@ -1,19 +1,17 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { backend, liveAuth } from "@/backend";
+import { emailSignInError, normalizeEmail } from "@/backend/email";
 import { DEMO_OTP } from "@/backend/types";
 import { Mark } from "@/components/mark";
-import { PhoneNumberField } from "@/components/phone-number-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { defaultCallingRegion, formatPhoneDisplay, toE164, type CallingRegion } from "@/lib/calling-codes";
 
 export function AuthScreen() {
   const navigate = useNavigate();
-  const [region, setRegion] = useState<CallingRegion>(() => defaultCallingRegion());
-  const [national, setNational] = useState("");
-  const [phoneLabel, setPhoneLabel] = useState("");
+  const [email, setEmail] = useState("");
+  const [emailLabel, setEmailLabel] = useState("");
   const [step, setStep] = useState<"contact" | "code">("contact");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -23,19 +21,19 @@ export function AuthScreen() {
   async function requestCode(event?: FormEvent) {
     event?.preventDefault();
     setError(null);
-    const parsed = toE164(region, national);
-    if (!parsed.ok) {
-      setError(parsed.error);
+    const parsed = normalizeEmail(email);
+    if (!parsed) {
+      setError(emailSignInError(email));
       return;
     }
     setBusy(true);
-    const result = await backend.requestOtp({ contact: parsed.e164 });
+    const result = await backend.requestOtp({ contact: parsed });
     setBusy(false);
     if (!result.ok) {
       setError(result.error);
       return;
     }
-    setPhoneLabel(formatPhoneDisplay(region, parsed.national));
+    setEmailLabel(parsed);
     setCode("");
     setStep("code");
   }
@@ -78,11 +76,11 @@ export function AuthScreen() {
           </p>
           {liveAuth ? (
             <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-              We'll text a 6-digit code. It never appears on a profile, in a room, or in a message.
+              We'll email a 6-digit code. It never appears on a profile, in a room, or in a message.
             </p>
           ) : (
             <p className="mt-4 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
-              Preview mode. Any phone number works. The code is{" "}
+              Preview mode. Any email address works. The code is{" "}
               <span className="font-semibold tabular-nums">{DEMO_OTP}</span>.
             </p>
           )}
@@ -90,26 +88,33 @@ export function AuthScreen() {
           {step === "contact" ? (
             <form className="mt-8 space-y-4" onSubmit={(event) => void requestCode(event)}>
               <div className="space-y-2">
-                <PhoneNumberField
-                  region={region}
-                  national={national}
-                  onRegion={(next) => {
-                    setRegion(next);
-                    setError(null);
-                  }}
-                  onNational={(next) => {
-                    setNational(next);
-                    setError(null);
-                  }}
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  value={email}
+                  placeholder="you@example.com"
+                  className="h-11"
+                  aria-invalid={error ? true : undefined}
+                  aria-describedby={error ? "email-error" : undefined}
                   disabled={busy}
-                  invalid={Boolean(error)}
+                  required
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    setError(null);
+                  }}
                 />
                 <p className="text-xs leading-relaxed text-muted-foreground">
                   Used only to sign you back in on this device. It never appears on a profile, in a room, or in a message.
                 </p>
               </div>
               {error ? (
-                <p id="phone-error" className="text-sm text-destructive">
+                <p id="email-error" className="text-sm text-destructive">
                   {error}
                 </p>
               ) : null}
@@ -136,8 +141,8 @@ export function AuthScreen() {
                   disabled={busy}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Signing in as <span className="font-medium text-foreground tabular-nums">{phoneLabel}</span>.{" "}
-                  {liveAuth ? "Enter the 6-digit code from the text." : `This preview does not text anyone. Enter ${DEMO_OTP}.`}
+                  Signing in as <span className="font-medium text-foreground">{emailLabel}</span>.{" "}
+                  {liveAuth ? "Enter the 6-digit code from the email." : `This preview does not email anyone. Enter ${DEMO_OTP}.`}
                 </p>
               </div>
               {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -154,7 +159,7 @@ export function AuthScreen() {
                   setError(null);
                 }}
               >
-                Use a different number
+                Use a different email
               </Button>
             </form>
           )}

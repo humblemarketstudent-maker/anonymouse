@@ -4,14 +4,14 @@ import { describe, expect, it } from "vitest";
 import { DEMO_OTP } from "../../src/backend/demo-otp.ts";
 import { createApp } from "./app.ts";
 import { DEFAULT_CORS_ORIGINS, loadConfig } from "./config.ts";
-import { SMS_GLOBAL_PER_HOUR, SMS_PER_IP_PER_HOUR, SMS_PER_NUMBER_PER_HOUR } from "./limits.ts";
+import { OTP_GLOBAL_PER_HOUR, OTP_PER_EMAIL_PER_HOUR, OTP_PER_IP_PER_HOUR } from "./limits.ts";
 import { verifySession } from "./token.ts";
 
 const ACCOUNT = `AC${"ab".repeat(16)}`;
 const SERVICE = `VA${"cd".repeat(16)}`;
 const TWILIO_TOKEN = "test-twilio-auth-token";
 const SESSION = "test-session-secret-value";
-const PHONE = "+12125550148";
+const EMAIL = "floor@example.com";
 const GOOD_CODE = "482913";
 
 interface TwilioCall {
@@ -40,14 +40,14 @@ function twilioFetch(calls: TwilioCall[], approveCode = GOOD_CODE, startStatus =
     const auth = new Headers(init?.headers).get("authorization") ?? "";
     calls.push({ url, body, auth });
     if (url.endsWith("/Verifications")) {
-      return new Response(JSON.stringify({ status: startStatus === 201 ? "pending" : "failed", to: PHONE, message: "upstream-phone-echo" }), {
+      return new Response(JSON.stringify({ status: startStatus === 201 ? "pending" : "failed", to: EMAIL, message: "upstream-email-echo" }), {
         status: startStatus,
       });
     }
     const params = new URLSearchParams(body);
     const approved = params.get("Code") === approveCode;
     return new Response(
-      JSON.stringify({ status: approved ? "approved" : "pending", to: params.get("To"), message: "upstream-phone-echo" }),
+      JSON.stringify({ status: approved ? "approved" : "pending", to: params.get("To"), message: "upstream-email-echo" }),
       { status: 200 },
     );
   };
@@ -93,52 +93,56 @@ describe("auth API", () => {
       const health = await fetch(`${base}/api/auth/health`);
       expect(await health.json()).toEqual({ ok: true });
       expect(health.headers.get("cache-control")).toBe("no-store");
-      const denied = await post(base, "/api/auth/request-otp", { contact: PHONE });
+      const denied = await post(base, "/api/auth/request-otp", { contact: EMAIL });
       const text = await denied.text();
       expect(denied.status).toBe(503);
       expect(text).not.toContain(TWILIO_TOKEN);
       expect(text).not.toContain(SESSION);
-      expect(text).not.toContain(PHONE);
+      expect(text).not.toContain(EMAIL);
+      expect(text).not.toContain("@");
       expect(calls).toHaveLength(0);
     } finally {
       await close(server);
     }
   });
 
-  it("asks Twilio Verify to text an E.164 number and does not keep the code", async () => {
+  it("asks Twilio Verify to email a code and does not keep the code", async () => {
     const calls: TwilioCall[] = [];
     const { server, base } = await boot(productionEnv(), twilioFetch(calls));
     try {
-      const response = await post(base, "/api/auth/request-otp", { contact: PHONE });
+      const response = await post(base, "/api/auth/request-otp", { contact: "Floor@Example.com" });
       const text = await response.text();
       expect(response.status).toBe(200);
       expect(text).toBe(JSON.stringify({ ok: true }));
-      expect(text).not.toContain(PHONE);
-      expect(text).not.toContain("upstream-phone-echo");
+      expect(text).not.toContain(EMAIL);
+      expect(text).not.toContain("@");
+      expect(text).not.toContain("upstream-email-echo");
       expect(text).not.toContain(TWILIO_TOKEN);
       expect(calls).toHaveLength(1);
       expect(calls[0]?.url).toBe(`https://verify.twilio.com/v2/Services/${SERVICE}/Verifications`);
-      expect(calls[0]?.body).toBe(new URLSearchParams({ To: PHONE, Channel: "sms" }).toString());
+      expect(calls[0]?.body).toBe(new URLSearchParams({ To: EMAIL, Channel: "email" }).toString());
+      expect(calls[0]?.body).not.toContain("sms");
       expect(Buffer.from((calls[0]?.auth ?? "").replace(/^Basic /, ""), "base64").toString()).toBe(`${ACCOUNT}:${TWILIO_TOKEN}`);
     } finally {
       await close(server);
     }
   });
 
-  it("returns a short-lived token after Twilio approves the code, without the phone", async () => {
+  it("returns a short-lived token after Twilio approves the code, without the email", async () => {
     const calls: TwilioCall[] = [];
     const clock = 1_700_000_000_000;
     const { server, base } = await boot(productionEnv(), twilioFetch(calls), () => clock);
     try {
-      await post(base, "/api/auth/request-otp", { contact: PHONE });
-      const wrong = await post(base, "/api/auth/verify-otp", { contact: PHONE, code: "111111" });
+      await post(base, "/api/auth/request-otp", { contact: EMAIL });
+      const wrong = await post(base, "/api/auth/verify-otp", { contact: EMAIL, code: "111111" });
       const wrongText = await wrong.text();
       expect(wrong.status).toBe(400);
       expect(wrongText).not.toContain("token");
-      expect(wrongText).not.toContain(PHONE);
+      expect(wrongText).not.toContain(EMAIL);
+      expect(wrongText).not.toContain("@");
       expect(wrongText).not.toContain(DEMO_OTP);
 
-      const response = await post(base, "/api/auth/verify-otp", { contact: PHONE, code: GOOD_CODE });
+      const response = await post(base, "/api/auth/verify-otp", { contact: "Floor@Example.com", code: GOOD_CODE });
       const text = await response.text();
       const body = JSON.parse(text) as { ok: boolean; token: string; expiresAt: number };
       expect(response.status).toBe(200);
@@ -148,12 +152,14 @@ describe("auth API", () => {
       expect(verifySession(SESSION, body.token, clock + 5 * 60 * 1000)).toBe(false);
       const payload = JSON.parse(Buffer.from(body.token.split(".")[0] ?? "", "base64url").toString("utf8")) as Record<string, unknown>;
       expect(payload).toEqual({ v: 1, iat: clock, exp: clock + 5 * 60 * 1000 });
-      expect(text).not.toContain(PHONE);
+      expect(JSON.stringify(payload)).not.toContain("@");
+      expect(text).not.toContain(EMAIL);
+      expect(text).not.toContain("@");
       expect(text).not.toContain(TWILIO_TOKEN);
-      expect(text).not.toContain("upstream-phone-echo");
+      expect(text).not.toContain("upstream-email-echo");
       const check = calls.at(-1);
       expect(check?.url).toContain("/VerificationCheck");
-      expect(check?.body).toContain(`To=${encodeURIComponent(PHONE)}`);
+      expect(check?.body).toContain(`To=${encodeURIComponent(EMAIL)}`);
       expect(check?.body).toContain(`Code=${GOOD_CODE}`);
     } finally {
       await close(server);
@@ -164,10 +170,10 @@ describe("auth API", () => {
     const liveCalls: TwilioCall[] = [];
     const live = await boot(productionEnv({ ALLOW_DEMO_OTP: "true" }), twilioFetch(liveCalls));
     try {
-      const requested = await post(live.base, "/api/auth/request-otp", { contact: PHONE });
+      const requested = await post(live.base, "/api/auth/request-otp", { contact: EMAIL });
       expect(requested.status).toBe(200);
       expect(liveCalls).toHaveLength(1);
-      const verified = await post(live.base, "/api/auth/verify-otp", { contact: PHONE, code: DEMO_OTP });
+      const verified = await post(live.base, "/api/auth/verify-otp", { contact: EMAIL, code: DEMO_OTP });
       const text = await verified.text();
       expect(verified.status).toBe(400);
       expect(text).not.toContain(DEMO_OTP);
@@ -182,12 +188,12 @@ describe("auth API", () => {
       twilioFetch(demoCalls),
     );
     try {
-      const requested = await post(demo.base, "/api/auth/request-otp", { contact: PHONE });
+      const requested = await post(demo.base, "/api/auth/request-otp", { contact: EMAIL });
       expect(await requested.json()).toEqual({ ok: true });
       expect(demoCalls).toHaveLength(0);
-      const other = await post(demo.base, "/api/auth/verify-otp", { contact: PHONE, code: GOOD_CODE });
+      const other = await post(demo.base, "/api/auth/verify-otp", { contact: EMAIL, code: GOOD_CODE });
       expect(other.status).toBe(400);
-      const verified = await post(demo.base, "/api/auth/verify-otp", { contact: PHONE, code: DEMO_OTP });
+      const verified = await post(demo.base, "/api/auth/verify-otp", { contact: EMAIL, code: DEMO_OTP });
       const body = (await verified.json()) as { ok: boolean; token: string };
       expect(body.ok).toBe(true);
       expect(verifySession(SESSION, body.token, 1_700_000_000_000)).toBe(true);
@@ -197,43 +203,43 @@ describe("auth API", () => {
     }
   });
 
-  it("limits texts per number, per address, and per process", async () => {
+  it("limits codes per email, per address, and per process", async () => {
     const calls: TwilioCall[] = [];
     let clock = 1_700_000_000_000;
     const { server, base } = await boot(productionEnv(), twilioFetch(calls), () => clock);
     try {
-      expect((await post(base, "/api/auth/request-otp", { contact: PHONE })).status).toBe(200);
-      const again = await post(base, "/api/auth/request-otp", { contact: PHONE });
+      expect((await post(base, "/api/auth/request-otp", { contact: EMAIL })).status).toBe(200);
+      const again = await post(base, "/api/auth/request-otp", { contact: "Floor@Example.com" });
       expect(again.status).toBe(429);
       expect(await again.json()).toEqual({ ok: false, error: "A code was just sent. Wait a minute before requesting another." });
       expect(calls).toHaveLength(1);
 
-      for (let sent = 1; sent < SMS_PER_NUMBER_PER_HOUR; sent += 1) {
+      for (let sent = 1; sent < OTP_PER_EMAIL_PER_HOUR; sent += 1) {
         clock += 60_000;
-        expect((await post(base, "/api/auth/request-otp", { contact: PHONE })).status).toBe(200);
+        expect((await post(base, "/api/auth/request-otp", { contact: EMAIL })).status).toBe(200);
       }
       clock += 60_000;
-      const hourly = await post(base, "/api/auth/request-otp", { contact: PHONE });
+      const hourly = await post(base, "/api/auth/request-otp", { contact: EMAIL });
       expect(hourly.status).toBe(429);
-      expect(((await hourly.json()) as { error: string }).error).toMatch(/this number/i);
-      expect(calls).toHaveLength(SMS_PER_NUMBER_PER_HOUR);
+      expect(((await hourly.json()) as { error: string }).error).toMatch(/this email/i);
+      expect(calls).toHaveLength(OTP_PER_EMAIL_PER_HOUR);
 
       clock += 60 * 60_000;
-      for (let index = 0; index < SMS_PER_IP_PER_HOUR; index += 1) {
-        const phone = `+1202555${String(index).padStart(4, "0")}`;
-        expect((await post(base, "/api/auth/request-otp", { contact: phone }, { "x-forwarded-for": "203.0.113.10" })).status).toBe(200);
+      for (let index = 0; index < OTP_PER_IP_PER_HOUR; index += 1) {
+        const email = `ip${index}@example.com`;
+        expect((await post(base, "/api/auth/request-otp", { contact: email }, { "x-forwarded-for": "203.0.113.10" })).status).toBe(200);
       }
-      const networked = await post(base, "/api/auth/request-otp", { contact: "+12025550199" }, { "x-forwarded-for": "203.0.113.10" });
+      const networked = await post(base, "/api/auth/request-otp", { contact: "extra@example.com" }, { "x-forwarded-for": "203.0.113.10" });
       expect(networked.status).toBe(429);
       expect(((await networked.json()) as { error: string }).error).toMatch(/this network/i);
 
       clock += 60 * 60_000;
-      for (let index = 0; index < SMS_GLOBAL_PER_HOUR; index += 1) {
-        const phone = `+1312555${String(index).padStart(4, "0")}`;
-        const response = await post(base, "/api/auth/request-otp", { contact: phone }, { "x-forwarded-for": `198.51.100.${index + 1}` });
+      for (let index = 0; index < OTP_GLOBAL_PER_HOUR; index += 1) {
+        const email = `global${index}@example.com`;
+        const response = await post(base, "/api/auth/request-otp", { contact: email }, { "x-forwarded-for": `198.51.100.${index + 1}` });
         expect(response.status).toBe(200);
       }
-      const globalCap = await post(base, "/api/auth/request-otp", { contact: "+13125550999" }, { "x-forwarded-for": "198.51.100.200" });
+      const globalCap = await post(base, "/api/auth/request-otp", { contact: "overflow@example.com" }, { "x-forwarded-for": "198.51.100.200" });
       expect(globalCap.status).toBe(429);
       expect(((await globalCap.json()) as { error: string }).error).toBe("Too many codes were requested. Try again later.");
     } finally {
@@ -246,11 +252,11 @@ describe("auth API", () => {
     const { server, base } = await boot(productionEnv(), twilioFetch(calls));
     try {
       for (let attempt = 0; attempt < 5; attempt += 1) {
-        const response = await post(base, "/api/auth/verify-otp", { contact: PHONE, code: "111111" });
+        const response = await post(base, "/api/auth/verify-otp", { contact: EMAIL, code: "111111" });
         expect(response.status).toBe(400);
       }
       expect(calls).toHaveLength(5);
-      const blocked = await post(base, "/api/auth/verify-otp", { contact: PHONE, code: GOOD_CODE });
+      const blocked = await post(base, "/api/auth/verify-otp", { contact: EMAIL, code: GOOD_CODE });
       expect(blocked.status).toBe(429);
       expect(calls).toHaveLength(5);
     } finally {
@@ -272,11 +278,11 @@ describe("auth API", () => {
         expect(preflight.status).toBe(204);
         expect(preflight.headers.get("access-control-allow-origin")).toBe(origin);
       }
-      const blocked = await post(base, "/api/auth/request-otp", { contact: PHONE }, { origin: "https://evil.example" });
+      const blocked = await post(base, "/api/auth/request-otp", { contact: EMAIL }, { origin: "https://evil.example" });
       expect(blocked.status).toBe(403);
       expect(blocked.headers.get("access-control-allow-origin")).toBeNull();
       expect(calls).toHaveLength(0);
-      const allowed = await post(base, "/api/auth/request-otp", { contact: PHONE }, { origin: "https://anonymouse.lol" });
+      const allowed = await post(base, "/api/auth/request-otp", { contact: EMAIL }, { origin: "https://anonymouse.lol" });
       expect(allowed.status).toBe(200);
       expect(allowed.headers.get("access-control-allow-origin")).toBe("https://anonymouse.lol");
     } finally {
@@ -292,21 +298,23 @@ describe("auth API", () => {
     }
   });
 
-  it("rejects email, a short number, a huge body, and a missing session secret before Twilio", async () => {
+  it("rejects a phone number, a bad address, a huge body, and a missing session secret before Twilio", async () => {
     const calls: TwilioCall[] = [];
     const { server, base } = await boot(productionEnv(), twilioFetch(calls));
     try {
-      expect((await post(base, "/api/auth/request-otp", { contact: "floor@anonymouse.app" })).status).toBe(400);
-      expect((await post(base, "/api/auth/request-otp", { contact: "+1555" })).status).toBe(400);
-      expect((await post(base, "/api/auth/verify-otp", { contact: PHONE, code: "12" })).status).toBe(400);
+      expect((await post(base, "/api/auth/request-otp", { contact: "+12125550148" })).status).toBe(400);
+      expect((await post(base, "/api/auth/request-otp", { contact: "2125550148" })).status).toBe(400);
+      expect((await post(base, "/api/auth/request-otp", { contact: "a@b" })).status).toBe(400);
+      expect((await post(base, "/api/auth/verify-otp", { contact: "+12125550148", code: GOOD_CODE })).status).toBe(400);
+      expect((await post(base, "/api/auth/verify-otp", { contact: EMAIL, code: "12" })).status).toBe(400);
       const huge = await fetch(`${base}/api/auth/request-otp`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ contact: PHONE, pad: "x".repeat(5000) }),
+        body: JSON.stringify({ contact: EMAIL, pad: "x".repeat(5000) }),
       });
       expect(huge.status).toBe(413);
       expect(calls).toHaveLength(0);
-      const still = await post(base, "/api/auth/request-otp", { contact: PHONE });
+      const still = await post(base, "/api/auth/request-otp", { contact: EMAIL });
       expect(still.status).toBe(200);
     } finally {
       await close(server);
@@ -314,7 +322,7 @@ describe("auth API", () => {
 
     const unsigned = await boot(productionEnv({ AUTH_SESSION_SECRET: "too-short" }), twilioFetch([]));
     try {
-      const response = await post(unsigned.base, "/api/auth/request-otp", { contact: PHONE });
+      const response = await post(unsigned.base, "/api/auth/request-otp", { contact: EMAIL });
       expect(response.status).toBe(503);
     } finally {
       await close(unsigned.server);

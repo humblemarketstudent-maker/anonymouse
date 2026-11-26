@@ -64,7 +64,7 @@ function Sidebar() {
         ))}
       </nav>
       <p className="px-4 py-4 text-[11px] leading-relaxed text-muted-foreground">
-        {liveAuth ? "Phone stays on this device." : "Demo. Country code, then 000000."}
+        {liveAuth ? "Email stays on this device." : "Demo. Any email, then 000000."}
       </p>
     </aside>
   );
