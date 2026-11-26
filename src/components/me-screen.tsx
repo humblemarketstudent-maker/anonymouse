@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { backend } from "@/backend";
 import { AvatarEditor } from "@/components/avatar-editor";
@@ -167,6 +167,9 @@ export function MeScreen() {
           </Button>
           <Button type="button" variant="ghost" onClick={() => setResetOpen(true)}>
             Reset demo
+          </Button>
+          <Button type="button" variant="ghost" asChild>
+            <Link to="/admin">Moderation log</Link>
           </Button>
         </div>
       </div>

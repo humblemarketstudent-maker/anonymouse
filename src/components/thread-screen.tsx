@@ -4,9 +4,11 @@ import { Flame, Send } from "lucide-react";
 import type { ChatAttachment } from "@/backend/types";
 import { AttachButton, LinkButton, SharePreview } from "@/components/share-controls";
 import { NewsCard } from "@/components/news-card";
-import { CONTACT_BLOCKED, contactViolation } from "@/lib/contact";
+import { contactViolation } from "@/lib/contact";
+import { NOTICE } from "@/moderation/notices";
 import { previewFromUrl } from "@/lib/news";
 import { buildOutgoing } from "@/lib/outgoing";
+import { reviewForSend } from "@/lib/review-send";
 import { toast } from "sonner";
 import { backend } from "@/backend";
 import { AliasMenu } from "@/components/alias-menu";
@@ -70,10 +72,11 @@ export function ThreadScreen({ threadId, backTo = "/msg" }: { threadId: string; 
     );
   }
 
-  const linkBlocked = linkOpen && url.trim() && contactViolation(url) ? CONTACT_BLOCKED : null;
-  const linkPreview = linkOpen && url.trim() && !linkBlocked ? previewFromUrl(url, body) : null;
+  const actorId = me.id;
+  const linkHeld = linkOpen && url.trim() && contactViolation(url) ? NOTICE.pii : null;
+  const linkPreview = linkOpen && url.trim() && !linkHeld ? previewFromUrl(url, body) : null;
 
-  function send() {
+  async function send() {
     const next = buildOutgoing({
       body,
       url,
@@ -86,7 +89,22 @@ export function ThreadScreen({ threadId, backTo = "/msg" }: { threadId: string; 
       setError(next.error);
       return;
     }
-    const result = backend.sendMessage(threadId, next.body, { news: next.news, attachment: next.attachment });
+    const reviewed = await reviewForSend({
+      body: next.body,
+      news: next.news,
+      attachment: next.attachment,
+      channelId: threadId,
+      actorId,
+    });
+    if (!reviewed.ok) {
+      setError(reviewed.error);
+      return;
+    }
+    const result = backend.sendMessage(threadId, reviewed.body, {
+      news: reviewed.news,
+      attachment: reviewed.attachment,
+      stamp: reviewed.stamp,
+    });
     if (!result.ok) {
       setError(result.error);
       return;
@@ -97,6 +115,8 @@ export function ThreadScreen({ threadId, backTo = "/msg" }: { threadId: string; 
     setLinkOpen(false);
     setError(null);
     setPin((value) => value + 1);
+    const note = result.notice || reviewed.notice;
+    if (note) toast(note);
   }
 
   const fromMatch = thread.origin === "match";
@@ -210,9 +230,9 @@ export function ThreadScreen({ threadId, backTo = "/msg" }: { threadId: string; 
             <Send />
           </Button>
         </div>
-        {error || linkBlocked ? (
-          <p role="alert" className="mt-1 px-1 text-sm leading-snug text-destructive">
-            {error || linkBlocked}
+        {error || linkHeld ? (
+          <p role="alert" className={`mt-1 px-1 text-sm leading-snug ${error ? "text-destructive" : "text-primary"}`}>
+            {error || linkHeld}
           </p>
         ) : null}
       </form>

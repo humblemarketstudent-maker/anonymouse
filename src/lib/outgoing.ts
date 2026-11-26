@@ -1,5 +1,5 @@
 import type { ChatAttachment, NewsLink } from "@/backend/types";
-import { CONTACT_BLOCKED, contactViolation } from "@/lib/contact";
+import { contactViolation } from "@/lib/contact";
 import { previewFromUrl } from "@/lib/news";
 
 export interface OutgoingDraft {
@@ -22,21 +22,40 @@ export function buildOutgoing(input: {
 }): OutgoingDraft | { error: string } {
   const caption = input.body.trim();
   const url = input.linkOpen ? input.url.trim() : "";
-  const haystack = [caption, url].filter(Boolean).join("\n");
-  if (contactViolation(haystack)) return { error: CONTACT_BLOCKED };
-  if (/^(mailto:|tel:)/i.test(url)) return { error: CONTACT_BLOCKED };
+  if (/^(mailto:|tel:)/i.test(url)) {
+    const body = [caption, url].filter(Boolean).join("\n");
+    if (body.length > input.maxLength) return { error: input.lengthError };
+    if (!body && !input.attachment) return { error: "Write a message, attach a file, or share a link." };
+    return { body, attachment: input.attachment };
+  }
 
   let body = caption;
   let news: NewsLink | undefined;
+  const unsafe = (value: string) => contactViolation(value) != null;
   if (url) {
-    news = previewFromUrl(url, caption) ?? undefined;
-    if (!news) return { error: "Paste a full http(s) link." };
-    if (contactViolation([news.url, news.title, news.summary].join("\n"))) return { error: CONTACT_BLOCKED };
+    if (unsafe(url) || unsafe(caption)) {
+      body = [caption, url].filter(Boolean).join("\n");
+    } else {
+      news = previewFromUrl(url, caption) ?? undefined;
+      if (!news) return { error: "Paste a full http(s) link." };
+      if (unsafe([news.url, news.title, news.summary, news.source].join("\n"))) {
+        body = [caption, url].filter(Boolean).join("\n");
+        news = undefined;
+      }
+    }
   } else if (/^https?:\/\/\S+$/.test(caption)) {
-    news = previewFromUrl(caption) ?? undefined;
-    if (!news) return { error: "That link doesn't look usable." };
-    if (contactViolation([news.url, news.title, news.summary].join("\n"))) return { error: CONTACT_BLOCKED };
-    body = "";
+    if (unsafe(caption)) {
+      body = caption;
+    } else {
+      news = previewFromUrl(caption) ?? undefined;
+      if (!news) return { error: "That link doesn't look usable." };
+      if (unsafe([news.url, news.title, news.summary, news.source].join("\n"))) {
+        body = caption;
+        news = undefined;
+      } else {
+        body = "";
+      }
+    }
   }
 
   if (body.length > input.maxLength) return { error: input.lengthError };

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { Check } from "lucide-react";
-import type { ChatAttachment, NewsLink } from "@/backend/types";
+import type { ChatAttachment, ModerationStamp, NewsLink } from "@/backend/types";
 import { FileCard } from "@/components/file-card";
 import { NewsCard } from "@/components/news-card";
 import { Persona } from "@/components/persona";
@@ -17,6 +17,7 @@ export interface ChatBubble {
   news?: NewsLink;
   attachment?: ChatAttachment;
   kind?: "text" | "blast";
+  moderation?: ModerationStamp;
 }
 
 export function ChatTranscript({
@@ -141,6 +142,9 @@ export function ChatTranscript({
                       </span>
                     ) : null}
                   </p>
+                  {message.moderation?.pii_redacted ? (
+                    <p className="text-[11px] text-primary">Personal details were masked.</p>
+                  ) : null}
                   {message.attachment ? <FileCard file={message.attachment} /> : null}
                   {message.news ? <NewsCard news={message.news} className="mt-1 max-w-md bg-background/40 p-2" /> : null}
                 </div>

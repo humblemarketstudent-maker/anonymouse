@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MESSAGE_TTL_MS, type ChatAttachment } from "@/backend/types";
 import { defaultAvatar } from "@/lib/avatar";
-import { CONTACT_BLOCKED } from "@/lib/contact";
+import { NOTICE } from "@/moderation/notices";
 import { NEWS_ITEMS } from "@/data/floor";
 import { heatBars } from "@/lib/heat";
 import { createLocalBackend, STORAGE_KEY, threadIsUnsolicited, type Kv } from "@/backend/local";
@@ -398,24 +398,30 @@ describe("local anonymouse", () => {
     expect(snap.messages.some((message) => message.body === "Keep this line.")).toBe(true);
   });
 
-  it("refuses personal contact details in rooms and private threads", async () => {
+  it("masks personal contact details in rooms and private threads", async () => {
     const { backend } = await signIn();
     const threadId = openedThread(backend);
     const blocked = [
-      "text me 212-555-0199",
-      "jane at gmail dot com",
-      "trader@bloomberg.net",
-      "uuid 12345678-1234-1234-1234-123456789abc",
-      "https://t.me/nightowl",
-      "@nightowl_desk",
+      ["text me 212-555-0199", "212-555-0199"],
+      ["jane at gmail dot com", "jane at gmail dot com"],
+      ["trader@bloomberg.net", "trader@bloomberg.net"],
+      ["uuid 12345678-1234-1234-1234-123456789abc", "12345678-1234-1234-1234-123456789abc"],
+      ["https://t.me/nightowl", "t.me/nightowl"],
+      ["@nightowl_desk", "@nightowl_desk"],
+      ["wechat: night_owl", "night_owl"],
     ];
-    for (const body of blocked) {
+    for (const [body, raw] of blocked) {
       const direct = backend.sendMessage(threadId, body);
-      expect(direct.ok, body).toBe(false);
-      if (!direct.ok) expect(direct.error).toBe(CONTACT_BLOCKED);
+      expect(direct.ok, body).toBe(true);
+      if (direct.ok) {
+        expect(direct.pii_redacted, body).toBe(true);
+        expect(direct.redacted_types.length, body).toBeGreaterThan(0);
+      }
       const room = backend.postChatter({ body, roomId: "room_market" });
-      expect(room.ok, body).toBe(false);
-      expect(JSON.stringify(backend.getSnapshot())).not.toContain(body);
+      expect(room.ok, body).toBe(true);
+      const stored = JSON.stringify(backend.getSnapshot());
+      expect(stored, body).not.toContain(raw);
+      expect(stored, body).toContain("****");
     }
 
     expect(backend.sendMessage(threadId, "Still short. Smaller than I sound.").ok).toBe(true);
@@ -436,7 +442,10 @@ describe("local anonymouse", () => {
         summary: "Come through.",
       },
     });
-    expect(link.ok).toBe(false);
+    expect(link.ok).toBe(true);
+    const afterLink = JSON.stringify(backend.getSnapshot());
+    expect(afterLink).not.toContain("t.me/nightowl");
+    expect(afterLink).not.toContain("telegram.me");
   });
 
   it("rejects a taken alias", async () => {
@@ -455,14 +464,13 @@ describe("local anonymouse", () => {
     const { backend } = await signIn();
     const ids = [openedThread(backend, "usr_macro"), openedThread(backend, "usr_folio")];
     expect(backend.getSnapshot().threads.length).toBeGreaterThan(1);
-    const before = backend.getSnapshot().messages.length;
     const empty = backend.blastThreads([], "Hello");
     expect(empty.ok).toBe(false);
-    const blocked = backend.blastThreads(ids, "text me 212-555-0199");
-    expect(blocked.ok).toBe(false);
-    if (!blocked.ok) expect(blocked.error).toBe(CONTACT_BLOCKED);
-    expect(backend.getSnapshot().messages).toHaveLength(before);
+    const masked = backend.blastThreads(ids, "text me 212-555-0199");
+    expect(masked.ok).toBe(true);
+    if (masked.ok) expect(masked.pii_redacted).toBe(true);
     expect(JSON.stringify(backend.getSnapshot())).not.toContain("212-555-0199");
+    expect(backend.getSnapshot().messages.filter((message) => message.body === "text me ****").length).toBe(ids.length);
 
     const sent = backend.blastThreads(ids, "Same note for both desks.");
     expect(sent.ok).toBe(true);
@@ -498,15 +506,23 @@ describe("local anonymouse", () => {
     expect(live.messages.some((message) => message.news?.title === "Dollar Holds")).toBe(true);
     expect(live.chatters.some((chatter) => chatter.attachment?.name === "brief.txt")).toBe(true);
 
-    const pii = backend.sendMessage(threadId, "mail jane@gmail.com", { attachment: textFile("nope", "should-not-land.txt") });
-    expect(pii.ok).toBe(false);
-    if (!pii.ok) expect(pii.error).toBe(CONTACT_BLOCKED);
+    const pii = backend.sendMessage(threadId, "mail jane@gmail.com", { attachment: textFile("notes", "clean.txt") });
+    expect(pii.ok).toBe(true);
+    if (pii.ok) expect(pii.pii_redacted).toBe(true);
+    const leaked = backend.sendMessage(threadId, "see this", {
+      attachment: textFile("token AKIAIOSFODNN7EXAMPLE", "secret.txt"),
+    });
+    expect(leaked.ok).toBe(false);
+    if (!leaked.ok) expect(leaked.error).toBe(NOTICE.attachmentBlocked);
     const tel = backend.sendMessage(threadId, "", {
       news: { url: "tel:+12125550148", source: "Phone", title: "Call", summary: "Now" },
     });
     expect(tel.ok).toBe(false);
-    expect(JSON.stringify(backend.getSnapshot())).not.toContain("should-not-land.txt");
-    expect(JSON.stringify(backend.getSnapshot())).not.toContain("tel:+12125550148");
+    const stored = JSON.stringify(backend.getSnapshot());
+    expect(stored).not.toContain("jane@gmail.com");
+    expect(stored).not.toContain("AKIAIOSFODNN7EXAMPLE");
+    expect(stored).not.toContain("secret.txt");
+    expect(stored).not.toContain("tel:+12125550148");
 
     advance(MESSAGE_TTL_MS + 5);
     const expired = JSON.stringify(backend.getSnapshot());

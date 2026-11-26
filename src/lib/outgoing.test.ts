@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { CONTACT_BLOCKED } from "@/lib/contact";
 import { ATTACHMENT_TOO_BIG, validateAttachment } from "@/lib/files";
 import { buildOutgoing } from "@/lib/outgoing";
 import type { ChatAttachment } from "@/backend/types";
@@ -29,17 +28,19 @@ describe("buildOutgoing", () => {
     expect(link.news?.source).toBe("Reuters");
   });
 
-  it("blocks contact details in the caption and in the url", () => {
-    const blocked = [
+  it("does not turn a contact link into a card", () => {
+    const held = [
       { body: "text me 212-555-0199", url: "", linkOpen: false },
       { body: "", url: "mailto:jane@gmail.com", linkOpen: true },
       { body: "", url: "tel:+12125550148", linkOpen: true },
       { body: "come through", url: "https://t.me/nightowl", linkOpen: true },
       { body: "", url: "https://telegram.me/nightowl", linkOpen: true },
     ];
-    for (const input of blocked) {
+    for (const input of held) {
       const result = buildOutgoing({ ...input, ...limits });
-      expect(result, input.url || input.body).toEqual({ error: CONTACT_BLOCKED });
+      expect("error" in result, input.url || input.body).toBe(false);
+      if ("error" in result) continue;
+      expect(result.news, input.url || input.body).toBeUndefined();
     }
   });
 

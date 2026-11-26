@@ -64,6 +64,10 @@ const BLOCKED: Array<[string, string]> = [
   ["tg://resolve?domain=nightowl", "telegram"],
   ["t dot me / nightowl", "telegram"],
   ["telegram dot me/nightowl", "telegram"],
+  ["wechat: night_owl", "wechat"],
+  ["wxid_ab12cd", "wechat"],
+  ["weixin id trader_7", "wechat"],
+  ["telegram at night_owl", "telegram"],
 ];
 
 describe("contactViolation", () => {
