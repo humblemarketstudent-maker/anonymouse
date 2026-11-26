@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MESSAGE_TTL_MS, type ChatAttachment } from "@/backend/types";
+import { callingRegionByIso, toE164 } from "@/lib/calling-codes";
 import { defaultAvatar } from "@/lib/avatar";
 import { NOTICE } from "@/moderation/notices";
 import { NEWS_ITEMS } from "@/data/floor";
@@ -94,6 +95,53 @@ describe("local anonymouse", () => {
     expect((await backend.verifyOtp("123456")).ok).toBe(false);
     const right = await backend.verifyOtp("000000");
     expect(right.ok).toBe(true);
+  });
+
+  it("signs in with a country code plus national number and the demo code", async () => {
+    const storage = memory();
+    const hongKong = callingRegionByIso("HK");
+    expect(hongKong?.dial).toBe("852");
+    const parsed = toE164(hongKong!, "9123 4567");
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.e164).toBe("+85291234567");
+
+    const { backend } = setup(storage);
+    expect((await backend.requestOtp({ contact: parsed.e164 })).ok).toBe(true);
+    expect((await backend.verifyOtp("123456")).ok).toBe(false);
+    const verified = await backend.verifyOtp("000000");
+    expect(verified.ok).toBe(true);
+    if (!verified.ok) return;
+    expect(verified.needsProfile).toBe(true);
+    expect(backend.debug().contacts).toEqual(["+85291234567"]);
+    expect(JSON.stringify(backend.getSnapshot())).not.toContain("85291234567");
+
+    expect(
+      backend.completeProfile({
+        alias: "Harbour",
+        bioQuote: "Quiet on the ferry",
+        hashtags: ["harbour"],
+      }).ok,
+    ).toBe(true);
+    backend.signOut();
+
+    const again = setup(storage).backend;
+    expect(again.getSnapshot().session).toBeNull();
+    const spaced = toE164(hongKong!, "+852 9123 4567");
+    expect(spaced.ok).toBe(true);
+    if (!spaced.ok) return;
+    expect(spaced.e164).toBe("+85291234567");
+    expect((await again.requestOtp({ contact: spaced.e164 })).ok).toBe(true);
+    const restored = await again.verifyOtp("000000");
+    expect(restored.ok).toBe(true);
+    if (restored.ok) expect(restored.needsProfile).toBe(false);
+    expect(again.getSnapshot().me?.alias).toBe("Harbour");
+    expect(JSON.stringify(again.getSnapshot())).not.toContain("85291234567");
+
+    const unitedStates = toE164(callingRegionByIso("US")!, "(212) 555-0148");
+    expect(unitedStates.ok).toBe(true);
+    if (!unitedStates.ok) return;
+    expect(unitedStates.e164).toBe("+12125550148");
   });
 
   it("keeps the phone off the public snapshot and restores the session", async () => {

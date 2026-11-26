@@ -36,13 +36,13 @@ Also set `NODE_VERSION` to `22` and `NODE_ENV` to `development` for the build, o
 
 ## Demo sign-in
 
-Any phone number is accepted. Email sign-in is not part of the app.
+Any phone number is accepted. Choose a country calling code, then enter the national number. Email sign-in is not part of the app.
 
 **The code is `000000`.**
 
-Example: `+1 212 555 0148`, then `000000`.
+Examples: Hong Kong `+852` and `9123 4567`, or United States `+1` and `212 555 0148`, then `000000`.
 
-The number is kept on this device so a refresh can restore the session. It is never shown on a profile, in a room, or in a message.
+The number is kept on this device so a refresh can restore the session. It is never shown on a profile, in a room, or in a message. This preview does not send an SMS.
 
 After the code:
 

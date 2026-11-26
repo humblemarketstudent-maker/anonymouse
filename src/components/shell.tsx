@@ -64,7 +64,7 @@ function Sidebar() {
         ))}
       </nav>
       <p className="px-4 py-4 text-[11px] leading-relaxed text-muted-foreground">
-        Demo. Any phone, code 000000.
+        Demo. Country code, then 000000.
       </p>
     </aside>
   );
