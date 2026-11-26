@@ -43,6 +43,7 @@ export function RoomScreen({ roomId, backTo }: { roomId: string; backTo: string 
         createdAt: line.createdAt,
         news: line.news,
         attachment: line.attachment,
+        moderation: line.moderation,
       })),
     [lines],
   );

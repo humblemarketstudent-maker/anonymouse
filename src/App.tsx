@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
+import { AdminScreen } from "@/components/admin-screen";
 import { AuthScreen } from "@/components/auth-screen";
 import { ChatsScreen } from "@/components/chats-screen";
 import { CreateRoomScreen } from "@/components/create-room-screen";
@@ -91,6 +92,7 @@ export default function App() {
           <Route path="inbox/:threadId" element={<ThreadQueryRedirect />} />
           <Route path="me" element={<Navigate to="/you" replace />} />
         </Route>
+        <Route path="/admin" element={<AdminScreen />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Send } from "lucide-react";
 import { toast } from "sonner";
+import { reviewForSend } from "@/lib/review-send";
 import { backend } from "@/backend";
 import type { ThreadOrigin } from "@/backend/types";
 import { EmptyState } from "@/components/empty-state";
@@ -116,22 +117,31 @@ function DeskList({ scope }: { scope: Scope }) {
     });
   }
 
-  function sendBlast() {
+  async function sendBlast() {
     const threadIds = picked.filter((id) => threads.some((thread) => thread.id === id));
     const roomIds = scope === "people" ? [] : picked.filter((id) => rooms.some((room) => room.id === id));
     if (threadIds.length === 0 && roomIds.length === 0) {
       setBlastError("Select at least one chat.");
       return;
     }
+    const reviewed = await reviewForSend({
+      body: blast,
+      channelId: threadIds[0] ?? roomIds[0] ?? "blast",
+      actorId: backend.getSnapshot().me?.id ?? "anonymous",
+    });
+    if (!reviewed.ok) {
+      setBlastError(reviewed.error);
+      return;
+    }
     if (threadIds.length > 0) {
-      const result = backend.blastThreads(threadIds, blast);
+      const result = backend.blastThreads(threadIds, reviewed.body, { stamp: reviewed.stamp });
       if (!result.ok) {
         setBlastError(result.error);
         return;
       }
     }
     for (const id of roomIds) {
-      const result = backend.postChatter({ body: blast, roomId: id });
+      const result = backend.postChatter({ body: reviewed.body, roomId: id, stamp: reviewed.stamp });
       if (!result.ok) {
         setBlastError(result.error);
         return;
@@ -141,6 +151,7 @@ function DeskList({ scope }: { scope: Scope }) {
     setBlast("");
     setBlastError(null);
     if (scope !== "people") setPicked([]);
+    if (reviewed.notice) toast(reviewed.notice);
     toast.success(`Blasted to ${count}`);
   }
 

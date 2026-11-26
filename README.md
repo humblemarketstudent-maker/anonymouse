@@ -69,4 +69,16 @@ UI code talks to the `Backend` interface in `src/backend/types.ts`. The running 
 
 To use Supabase or Firebase later, implement that same interface and change the factory in `src/backend/index.ts`. Do not import a vendor SDK from components. The public snapshot must keep omitting the phone number.
 
-`npm test` covers phone OTP, session restore, room search, the daily tap limit, accept and decline, and burn.
+`npm test` covers phone OTP, session restore, room search, the daily tap limit, accept and decline, burn, and the moderation agent.
+
+## Moderation
+
+Outgoing rooms, MSG, and blasts are checked before they are saved. Phone numbers, emails, Bloomberg IDs, Telegram handles, and WeChat IDs are replaced with `****`. Secrets and explicit sexual content are refused. An attachment the scanner cannot finish is held, not posted.
+
+The checker in the browser is deterministic and has no API key. A Node agent in `server/` adds the admin log, webhooks, and an optional model. Tokens and webhook URLs stay in server env vars. See [docs/moderation.md](docs/moderation.md) and `.env.example`.
+
+```bash
+npm run moderation
+```
+
+Admin is at `/admin` while the dev server is running. The static site on Render is unchanged and keeps working if that agent is not deployed.

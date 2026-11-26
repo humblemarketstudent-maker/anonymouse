@@ -1,4 +1,5 @@
 import { createLocalBackend } from "@/backend/local";
+import { sharedModeration } from "@/lib/moderation-runtime";
 
 /**
  * Swap point for a hosted backend.
@@ -10,6 +11,7 @@ import { createLocalBackend } from "@/backend/local";
  * with timers. Demo OTP is 000000 for any phone number. The number is
  * stored for sign-in only and is never copied onto the public snapshot.
  */
-export const backend = createLocalBackend();
+const moderation = sharedModeration();
+export const backend = createLocalBackend({ journal: moderation.journal, rate: moderation.rate });
 
 export { DEMO_OTP } from "@/backend/types";

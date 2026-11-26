@@ -67,6 +67,18 @@ export interface NewsLink {
   summary: string;
 }
 
+/** Stored with a message after personal details are masked. Never includes the raw text. */
+export interface ModerationStamp {
+  pii_redacted: boolean;
+  redacted_types: string[];
+}
+
+export interface ModerationOutcome {
+  pii_redacted: boolean;
+  redacted_types: string[];
+  notice?: string;
+}
+
 export interface Chatter {
   id: string;
   authorId: string;
@@ -75,6 +87,7 @@ export interface Chatter {
   news?: NewsLink;
   attachment?: ChatAttachment;
   createdAt: number;
+  moderation?: ModerationStamp;
 }
 
 export interface ThreadSummary {
@@ -97,6 +110,7 @@ export interface DirectMessage {
   news?: NewsLink;
   attachment?: ChatAttachment;
   createdAt: number;
+  moderation?: ModerationStamp;
 }
 
 export interface AppNotification {
@@ -182,10 +196,15 @@ export interface Backend {
     news?: NewsLink;
     attachment?: ChatAttachment;
     blastFriendIds?: string[];
-  }): Result<{ id: string }>;
-  sendMessage(threadId: string, body: string, extras?: { news?: NewsLink; attachment?: ChatAttachment }): Result;
+    stamp?: ModerationStamp;
+  }): Result<{ id: string } & ModerationOutcome>;
+  sendMessage(
+    threadId: string,
+    body: string,
+    extras?: { news?: NewsLink; attachment?: ChatAttachment; stamp?: ModerationStamp },
+  ): Result<ModerationOutcome>;
   /** Deliver one blast into every selected private thread, or into none. */
-  blastThreads(threadIds: string[], body: string): Result<{ sent: number }>;
+  blastThreads(threadIds: string[], body: string, extras?: { stamp?: ModerationStamp }): Result<{ sent: number } & ModerationOutcome>;
   /** Save this profile's mouse, or pass null to go back to the letter mark. */
   setAvatar(avatar: MouseAvatar | null): Result;
   openThread(peerId: string): Result<{ threadId: string }>;

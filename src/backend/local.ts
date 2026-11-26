@@ -11,6 +11,7 @@ import {
   type Chatter,
   type DirectMessage,
   type Flash,
+  type ModerationStamp,
   type NewsLink,
   type PublicUser,
   type Result,
@@ -35,7 +36,12 @@ import {
   SEEDED_ROOMS,
 } from "@/data/floor";
 import { coerceAvatar, DEMO_AVATARS, parseAvatar, type MouseAvatar } from "@/lib/avatar";
-import { CONTACT_BLOCKED, contactViolation } from "@/lib/contact";
+import { contactViolation } from "@/lib/contact";
+import type { Journal } from "@/moderation/journal";
+import { createJournal } from "@/moderation/journal";
+import { enforceSync } from "@/moderation/pipeline";
+import type { RateStore } from "@/moderation/rate";
+import { createRateStore } from "@/moderation/rate";
 import { attachmentPreview, validateAttachment } from "@/lib/files";
 import { collectHashtags } from "@/lib/hashtags";
 import { profileError } from "@/lib/profile";
@@ -159,6 +165,8 @@ export interface LocalOptions {
   now?: () => number;
   random?: () => number;
   schedule?: (fn: () => void, ms: number) => () => void;
+  journal?: Journal;
+  rate?: RateStore;
 }
 
 export interface LocalBackend extends Backend {
@@ -304,6 +312,8 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     });
   const storage =
     options.storage ?? (typeof localStorage === "undefined" ? memoryKv() : browserKv());
+  const journal = options.journal ?? createJournal(storage);
+  const rate = options.rate ?? createRateStore();
 
   let seq = 0;
   const uid = (prefix: string) => {
@@ -856,6 +866,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     attachment?: ChatAttachment;
     notify: boolean;
     flash: boolean;
+    moderation?: ModerationStamp;
   }) {
     const message: DirectMessage = {
       id: uid("msg"),
@@ -866,6 +877,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       news: input.news,
       attachment: input.attachment,
       createdAt: now(),
+      moderation: input.moderation,
     };
     state.messages.push(message);
     input.thread.updatedAt = message.createdAt;
@@ -1126,22 +1138,71 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     lengthError: string;
     emptyError: string;
     copies?: number;
-  }): { ok: true; body: string; news?: NewsLink; attachment?: ChatAttachment } | { ok: false; error: string } {
+    channelId: string;
+    actorId: string;
+    stamp?: ModerationStamp;
+  }):
+    | {
+        ok: true;
+        body: string;
+        news?: NewsLink;
+        attachment?: ChatAttachment;
+        pii_redacted: boolean;
+        redacted_types: string[];
+        notice?: string;
+      }
+    | { ok: false; error: string } {
     const body = cleanText(input.body);
-    if (contactViolation(contactHaystack([body, input.news?.url, input.news?.title, input.news?.summary]))) {
-      return { ok: false, error: CONTACT_BLOCKED };
-    }
-    if (input.news && !validNews(input.news)) return { ok: false, error: "That link doesn't look usable." };
     if (body.length > input.max) return { ok: false, error: input.lengthError };
+    if (input.news && !/^https?:\/\//i.test(input.news.url)) return { ok: false, error: "That link doesn't look usable." };
     const file = takeAttachment(input.attachment);
     if (!file.ok) return file;
-    const news = input.news && validNews(input.news) ? input.news : undefined;
-    if (!body && !news && !file.attachment) return { ok: false, error: input.emptyError };
-    if (file.attachment) {
-      const room = storeRoomError(file.attachment.dataUrl.length * Math.max(1, input.copies ?? 1) + 512);
+    const evaluation = enforceSync(
+      {
+        parts: {
+          body,
+          url: input.news?.url,
+          title: input.news?.title,
+          summary: input.news?.summary,
+          source: input.news?.source,
+        },
+        attachment: file.attachment,
+        channelId: input.channelId,
+        actorId: input.actorId,
+      },
+      { journal, rate, now: now(), stamp: input.stamp },
+    );
+    if (evaluation.action !== "allow" && evaluation.action !== "redact") {
+      return { ok: false, error: evaluation.notice || "That message was blocked before it could be posted." };
+    }
+    let news: NewsLink | undefined;
+    if (input.news && evaluation.parts.url && evaluation.parts.title && evaluation.parts.source) {
+      const next: NewsLink = {
+        url: evaluation.parts.url,
+        title: evaluation.parts.title,
+        summary: evaluation.parts.summary ?? "",
+        source: evaluation.parts.source,
+      };
+      if (validNews(next) && !contactViolation(contactHaystack([next.url, next.title, next.summary, next.source]))) {
+        news = next;
+      }
+    }
+    const attachment = file.attachment && evaluation.attachmentAllowed ? file.attachment : undefined;
+    const outBody = evaluation.parts.body;
+    if (!outBody && !news && !attachment) return { ok: false, error: input.emptyError };
+    if (attachment) {
+      const room = storeRoomError(attachment.dataUrl.length * Math.max(1, input.copies ?? 1) + 512);
       if (room) return { ok: false, error: room };
     }
-    return { ok: true, body, news, attachment: file.attachment };
+    return {
+      ok: true,
+      body: outBody,
+      news,
+      attachment,
+      pii_redacted: evaluation.pii_redacted,
+      redacted_types: evaluation.redacted_types,
+      notice: evaluation.notice,
+    };
   }
 
   const api: LocalBackend = {
@@ -1304,8 +1365,14 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
         lengthError: "Keep it to 280 characters.",
         emptyError: "Write something, attach a file, or share a link.",
         copies: 1 + blastIds.length,
+        channelId: input.roomId,
+        actorId: profile.id,
+        stamp: input.stamp,
       });
       if (!composed.ok) return composed;
+      const moderation = composed.pii_redacted
+        ? { pii_redacted: true, redacted_types: composed.redacted_types }
+        : undefined;
       const chatter: Chatter = {
         id: uid("cht"),
         authorId: profile.id,
@@ -1314,6 +1381,7 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
         news: composed.news,
         attachment: composed.attachment,
         createdAt: now(),
+        moderation,
       };
       state.chatters.push(chatter);
       trimChannel(input.roomId);
@@ -1329,10 +1397,17 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
           attachment: composed.attachment,
           notify: false,
           flash: false,
+          moderation,
         });
       }
       emit();
-      return { ok: true, id: chatter.id };
+      return {
+        ok: true,
+        id: chatter.id,
+        pii_redacted: composed.pii_redacted,
+        redacted_types: composed.redacted_types,
+        notice: composed.notice,
+      };
     },
     sendMessage(threadId, raw, extras) {
       const profile = me();
@@ -1351,8 +1426,14 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
         max: DM_MAX,
         lengthError: "Keep the message under 600 characters.",
         emptyError: "Write something, attach a file, or share a link.",
+        channelId: threadId,
+        actorId: profile.id,
+        stamp: extras?.stamp,
       });
       if (!composed.ok) return composed;
+      const moderation = composed.pii_redacted
+        ? { pii_redacted: true, redacted_types: composed.redacted_types }
+        : undefined;
       addDirect({
         thread,
         senderId: profile.id,
@@ -1362,20 +1443,22 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
         attachment: composed.attachment,
         notify: false,
         flash: false,
+        moderation,
       });
       queueReply(thread.id, peerId, composed.body);
       emit();
-      return { ok: true };
+      return {
+        ok: true,
+        pii_redacted: composed.pii_redacted,
+        redacted_types: composed.redacted_types,
+        notice: composed.notice,
+      };
     },
-    blastThreads(threadIds, raw) {
+    blastThreads(threadIds, raw, extras) {
       const profile = me();
       if (!profile) return { ok: false, error: "Sign in first." };
       const ids = [...new Set(threadIds)];
       if (ids.length === 0) return { ok: false, error: "Select at least one chat." };
-      const body = cleanText(raw);
-      if (!body) return { ok: false, error: "Write a blast first." };
-      if (body.length > DM_MAX) return { ok: false, error: "Keep the message under 600 characters." };
-      if (contactViolation(body)) return { ok: false, error: CONTACT_BLOCKED };
       const threads: ThreadRec[] = [];
       for (const id of ids) {
         const thread = state.threads.find((item) => item.id === id);
@@ -1386,12 +1469,32 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
         if (isBlocked(profile.id, peerId)) return { ok: false, error: "Unblock every selected alias before you blast." };
         threads.push(thread);
       }
+      const composed = composeMessage({
+        body: raw,
+        max: DM_MAX,
+        lengthError: "Keep the message under 600 characters.",
+        emptyError: "Write a blast first.",
+        copies: threads.length,
+        channelId: ids[0] ?? "blast",
+        actorId: profile.id,
+        stamp: extras?.stamp,
+      });
+      if (!composed.ok) return composed;
+      const moderation = composed.pii_redacted
+        ? { pii_redacted: true, redacted_types: composed.redacted_types }
+        : undefined;
       for (const thread of threads) {
         engage(thread, profile.id);
-        addDirect({ thread, senderId: profile.id, body, kind: "blast", notify: false, flash: false });
+        addDirect({ thread, senderId: profile.id, body: composed.body, kind: "blast", notify: false, flash: false, moderation });
       }
       emit();
-      return { ok: true, sent: threads.length };
+      return {
+        ok: true,
+        sent: threads.length,
+        pii_redacted: composed.pii_redacted,
+        redacted_types: composed.redacted_types,
+        notice: composed.notice,
+      };
     },
     setAvatar(avatar: MouseAvatar | null) {
       const account = sessionAccount();

@@ -5,9 +5,11 @@ import { backend } from "@/backend";
 import type { ChatAttachment } from "@/backend/types";
 import { NEWS_ITEMS } from "@/data/floor";
 import { useFloor } from "@/hooks/use-floor";
-import { CONTACT_BLOCKED, contactViolation } from "@/lib/contact";
+import { contactViolation } from "@/lib/contact";
+import { NOTICE } from "@/moderation/notices";
 import { previewFromUrl } from "@/lib/news";
 import { buildOutgoing } from "@/lib/outgoing";
+import { reviewForSend } from "@/lib/review-send";
 import { AttachButton, LinkButton, SharePreview } from "@/components/share-controls";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -40,8 +42,8 @@ export function Composer({
   const [blastOpen, setBlastOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
 
-  const linkBlocked = mode === "link" && url.trim() && contactViolation(url) ? CONTACT_BLOCKED : null;
-  const linkPreview = mode === "link" && url.trim() && !linkBlocked ? previewFromUrl(url, body) : null;
+  const linkHeld = mode === "link" && url.trim() && contactViolation(url) ? NOTICE.pii : null;
+  const linkPreview = mode === "link" && url.trim() && !linkHeld ? previewFromUrl(url, body) : null;
 
   function draft() {
     return buildOutgoing({
@@ -54,18 +56,31 @@ export function Composer({
     });
   }
 
-  function publish(blastFriendIds?: string[]) {
+  async function publish(blastFriendIds?: string[]) {
     const next = draft();
     if ("error" in next) {
       setError(next.error);
       return;
     }
-    const result = backend.postChatter({
+    const meId = backend.getSnapshot().me?.id ?? "anonymous";
+    const reviewed = await reviewForSend({
       body: next.body,
       news: next.news,
       attachment: next.attachment,
+      channelId: roomId,
+      actorId: meId,
+    });
+    if (!reviewed.ok) {
+      setError(reviewed.error);
+      return;
+    }
+    const result = backend.postChatter({
+      body: reviewed.body,
+      news: reviewed.news,
+      attachment: reviewed.attachment,
       roomId,
       blastFriendIds,
+      stamp: reviewed.stamp,
     });
     if (!result.ok) {
       setError(result.error);
@@ -78,6 +93,8 @@ export function Composer({
     setMode("take");
     setBlastOpen(false);
     onSent?.();
+    const note = result.notice || reviewed.notice;
+    if (note) toast(note);
     if (blastFriendIds && blastFriendIds.length > 0) toast.success(`Blasted to ${blastFriendIds.length}`);
   }
 
@@ -158,11 +175,11 @@ export function Composer({
           <Send />
         </Button>
       </div>
-      {error || linkBlocked || body.trim().length > 200 ? (
+      {error || linkHeld || body.trim().length > 200 ? (
         <div className="mt-1 flex items-center justify-between gap-3 px-1">
-          {error || linkBlocked ? (
-            <p role="alert" className="min-w-0 flex-1 text-sm leading-snug text-destructive">
-              {error || linkBlocked}
+          {error || linkHeld ? (
+            <p role="alert" className={`min-w-0 flex-1 text-sm leading-snug ${error ? "text-destructive" : "text-primary"}`}>
+              {error || linkHeld}
             </p>
           ) : (
             <span />
