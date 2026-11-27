@@ -2,10 +2,14 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { useNavigate } from "react-router-dom";
 import { backend } from "@/backend";
 import { emailSignInError, normalizeEmail } from "@/backend/email";
+import { DisclaimerNotice } from "@/components/disclaimer-notice";
 import { Mark } from "@/components/mark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { readDisclaimerAcceptance, writeDisclaimerAcceptance } from "@/lib/disclaimer";
+
+const DISCLAIMER_REQUIRED = "Read the notice and check the box before a code can be sent.";
 
 export function AuthScreen() {
   const navigate = useNavigate();
@@ -15,7 +19,14 @@ export function AuthScreen() {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [accepted, setAccepted] = useState(() => readDisclaimerAcceptance());
   const verifying = useRef(false);
+
+  function onAcceptedChange(next: boolean) {
+    setAccepted(next);
+    writeDisclaimerAcceptance(next);
+    setError(null);
+  }
 
   async function requestCode(event?: FormEvent) {
     event?.preventDefault();
@@ -23,6 +34,10 @@ export function AuthScreen() {
     const parsed = normalizeEmail(email);
     if (!parsed) {
       setError(emailSignInError(email));
+      return;
+    }
+    if (!accepted) {
+      setError(DISCLAIMER_REQUIRED);
       return;
     }
     setBusy(true);
@@ -66,8 +81,8 @@ export function AuthScreen() {
   return (
     <main className="relative min-h-dvh overflow-x-hidden bg-background">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[460px] bg-[radial-gradient(ellipse_at_top,color-mix(in_oklch,var(--primary)_16%,transparent),transparent_62%)]" />
-      <div className="relative mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 py-12">
-        <div className="my-auto">
+      <div className="relative mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 py-12 [justify-content:safe_center]">
+        <div className="w-full">
           <Mark className="size-16" />
           <h1 className="mt-5 text-4xl font-semibold tracking-tight">Anonymouse</h1>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
@@ -92,8 +107,8 @@ export function AuthScreen() {
                   value={email}
                   placeholder="you@example.com"
                   className="h-11"
-                  aria-invalid={error ? true : undefined}
-                  aria-describedby={error ? "email-error" : undefined}
+                  aria-invalid={error && error !== DISCLAIMER_REQUIRED ? true : undefined}
+                  aria-describedby={error && error !== DISCLAIMER_REQUIRED ? "email-error" : undefined}
                   disabled={busy}
                   required
                   onChange={(event) => {
@@ -105,12 +120,23 @@ export function AuthScreen() {
                   Used only to sign you back in on this device. It never appears on a profile, in a room, or in a message.
                 </p>
               </div>
+              <DisclaimerNotice
+                accepted={accepted}
+                disabled={busy}
+                invalid={error === DISCLAIMER_REQUIRED}
+                onAcceptedChange={onAcceptedChange}
+              />
               {error ? (
                 <p id="email-error" className="text-sm text-destructive">
                   {error}
                 </p>
               ) : null}
-              <Button type="submit" className="h-11 w-full" disabled={busy}>
+              <Button
+                type="submit"
+                className="h-11 w-full"
+                disabled={busy || !accepted}
+                aria-describedby={!accepted ? "disclaimer-required" : undefined}
+              >
                 {busy ? "Sending…" : "Send code"}
               </Button>
             </form>
