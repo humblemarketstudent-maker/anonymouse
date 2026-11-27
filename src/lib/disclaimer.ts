@@ -4,8 +4,8 @@
  */
 export const DISCLAIMER_STORAGE_KEY = "anonymouse.disclaimer.accepted";
 
-/** Bumped from the short 2026-11-27 notice so that agreement does not carry over. */
-export const DISCLAIMER_VERSION = "2026-11-27.2";
+/** Bumped so agreement to 2026-11-27 or 2026-11-27.2 does not carry over. */
+export const DISCLAIMER_VERSION = "2026-11-27.3";
 
 export type DisclaimerStorage = {
   getItem(key: string): string | null;
