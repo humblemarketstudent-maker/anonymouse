@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { readDisclaimerAcceptance, writeDisclaimerAcceptance } from "@/lib/disclaimer";
 
-const DISCLAIMER_REQUIRED = "Read the notice and check the box before a code can be sent.";
+const DISCLAIMER_REQUIRED = "Read the Terms and the Privacy Policy and check the box before a code can be sent.";
 
 export function AuthScreen() {
   const navigate = useNavigate();
