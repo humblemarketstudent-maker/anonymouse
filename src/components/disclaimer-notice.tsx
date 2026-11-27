@@ -1,6 +1,8 @@
+import { Link } from "react-router-dom";
+import { LegalDocumentView } from "@/components/legal-document";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { DISCLAIMER_SECTIONS } from "@/lib/disclaimer";
+import { LEGAL_DOCUMENTS } from "@/lib/legal";
 
 export function DisclaimerNotice({
   accepted,
@@ -15,18 +17,27 @@ export function DisclaimerNotice({
 }) {
   return (
     <fieldset disabled={disabled} className="min-w-0 space-y-3 border-0 p-0">
-      <legend className="text-sm font-medium">Before a code is sent</legend>
+      <legend className="text-sm font-medium">Terms and privacy</legend>
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        The full Terms of Service and the Privacy Policy and Personal Information Collection Statement are in the panel.
+        The same text is also on the{" "}
+        <Link to="/terms" target="_blank" rel="noopener noreferrer" className="text-primary underline-offset-4 hover:underline">
+          Terms of Service page
+        </Link>{" "}
+        and the{" "}
+        <Link to="/privacy" target="_blank" rel="noopener noreferrer" className="text-primary underline-offset-4 hover:underline">
+          Privacy Policy page
+        </Link>
+        .
+      </p>
       <div
         tabIndex={0}
         role="region"
-        aria-label="Service notice"
-        className="max-h-40 space-y-3 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card/80 px-3 py-3"
+        aria-label="Terms of Service and Privacy Policy"
+        className="max-h-80 space-y-6 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card/80 px-3 py-3"
       >
-        {DISCLAIMER_SECTIONS.map((section) => (
-          <section key={section.heading} className="space-y-1">
-            <h2 className="text-xs font-medium text-foreground">{section.heading}</h2>
-            <p className="text-xs leading-relaxed text-muted-foreground">{section.body}</p>
-          </section>
+        {LEGAL_DOCUMENTS.map((document) => (
+          <LegalDocumentView key={document.path} document={document} titleAs="h2" />
         ))}
       </div>
       <div className="flex items-start gap-3">
@@ -42,10 +53,11 @@ export function DisclaimerNotice({
         />
         <div className="space-y-1">
           <Label htmlFor="disclaimer" id="disclaimer-required" className="text-sm leading-snug font-normal">
-            I have read this notice and I agree.
+            I have read and agree to the Terms of Service and the Privacy Policy and Personal Information Collection
+            Statement.
           </Label>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            This device remembers your agreement until the notice changes. That choice stays on the device and is
+            This device remembers your agreement until these documents change. That choice stays on the device and is
             separate from your email.
           </p>
         </div>

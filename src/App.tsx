@@ -10,11 +10,13 @@ import { InboxLayout } from "@/components/inbox-screen";
 import { MatchScreen } from "@/components/match-screen";
 import { MeScreen } from "@/components/me-screen";
 import { MyRoomsScreen } from "@/components/my-rooms-screen";
+import { LegalPage } from "@/components/legal-document";
 import { ProfileScreen } from "@/components/profile-screen";
 import { SetupScreen } from "@/components/setup-screen";
 import { Shell } from "@/components/shell";
 import { Toaster } from "@/components/ui/sonner";
 import { useFloor } from "@/hooks/use-floor";
+import { PRIVACY_POLICY, TERMS_OF_SERVICE } from "@/lib/legal";
 
 function PublicOnly({ children }: { children: ReactNode }) {
   const { session, me } = useFloor();
@@ -92,6 +94,8 @@ export default function App() {
           <Route path="inbox/:threadId" element={<ThreadQueryRedirect />} />
           <Route path="me" element={<Navigate to="/you" replace />} />
         </Route>
+        <Route path="/terms" element={<LegalPage document={TERMS_OF_SERVICE} />} />
+        <Route path="/privacy" element={<LegalPage document={PRIVACY_POLICY} />} />
         <Route path="/admin" element={<AdminScreen />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
