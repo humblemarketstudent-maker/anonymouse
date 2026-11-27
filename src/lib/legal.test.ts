@@ -7,20 +7,19 @@ describe("combined terms and privacy", () => {
   it("keeps the Hong Kong structure and the short-notice duties", () => {
     expect(TERMS_OF_SERVICE.path).toBe("/terms");
     expect(PRIVACY_POLICY.path).toBe("/privacy");
-    expect(text).toMatch(/\[Company Name Limited\]/);
-    expect(text).toMatch(/\[Registered Hong Kong Business Address\]/);
     expect(text).toMatch(/Control of Exemption Clauses Ordinance \(Cap\. 71\)/);
     expect(text).toMatch(/HK\$1,000 or the total fees you paid us in the preceding twelve \(12\) months, whichever is greater/);
-    expect(text).toMatch(/indemnify and hold harmless \[Company Name Limited\]/);
+    expect(text).toMatch(/indemnify and hold harmless Anonymouse and the people who operate the service/);
+    expect(text).toMatch(/Anonymouse and the people who operate the service are not liable/);
     expect(text).toMatch(/courts of Hong Kong have exclusive jurisdiction/);
     expect(text).toMatch(/Personal Data \(Privacy\) Ordinance \(Cap\. 486\)/);
     expect(text).toMatch(/within 40 calendar days/);
     expect(text).toMatch(/reasonable, non-excessive fee/);
     expect(text).toMatch(/Part 6A of the PDPO/);
     expect(text).toMatch(/direct marketing/);
-    expect(text).toMatch(/Data Protection Officer/);
-    expect(text).toMatch(/abuse@anonymouse\.lol/);
-    expect(text).toMatch(/privacy@anonymouse\.lol/);
+    expect(text).toMatch(/send it from the email address you use to sign in/);
+    expect(text).toMatch(/does not publish a separate contact address/);
+    expect(text).toMatch(/A report that exists only on a device is not notice to us/);
     expect(text).toMatch(/responsible for how you use Anonymouse/);
     expect(text).toMatch(/does not pre-screen all messages/);
     expect(text).toMatch(/offered as it is/);
@@ -44,7 +43,7 @@ describe("combined terms and privacy", () => {
     expect(text).toMatch(/does not currently receive or retain that message content on its servers/);
     expect(text).toMatch(/held in memory only/);
     expect(text).toMatch(/served over TLS/);
-    expect(text).toMatch(/from the email address you use to sign in/);
+    expect(text).toMatch(/send it from the email address you use to sign in/);
     expect(text).toMatch(/outside Hong Kong/);
     expect(text).toMatch(/does not name a server region/);
     expect(text).toMatch(/about 3 days/);
@@ -52,6 +51,7 @@ describe("combined terms and privacy", () => {
 
   it("does not add claims the product does not make", () => {
     expect(text).not.toMatch(/Wellhive|anonymouse\.app|Prototype only|Nothing here is advice|lawyer|legal opinion/i);
+    expect(text).not.toMatch(/\[Company Name Limited\]|\[Registered Hong Kong Business Address\]|incorporated in Hong Kong|abuse@|privacy@|Data Protection Officer/);
     expect(text).toMatch(/We do not ask for a cryptographic proof or a session key/);
     expect(text).toMatch(/We do not collect push-notification tokens/);
     expect(text).toMatch(/does not claim cryptographic hashing as the way the email address is stored/);

@@ -33,6 +33,7 @@ describe("disclaimer acceptance", () => {
     expect(DISCLAIMER_STORAGE_KEY).not.toMatch(/email|otp|token|secret/i);
     expect(DISCLAIMER_VERSION).not.toContain("@");
     expect(DISCLAIMER_VERSION).not.toBe("2026-11-27");
+    expect(DISCLAIMER_VERSION).not.toBe("2026-11-27.2");
 
     writeDisclaimerAcceptance(false, storage);
     expect(readDisclaimerAcceptance(storage)).toBe(false);
@@ -42,6 +43,8 @@ describe("disclaimer acceptance", () => {
   it("ignores the short notice and any other older version", () => {
     const storage = memory();
     storage.setItem(DISCLAIMER_STORAGE_KEY, "2026-11-27");
+    expect(readDisclaimerAcceptance(storage)).toBe(false);
+    storage.setItem(DISCLAIMER_STORAGE_KEY, "2026-11-27.2");
     expect(readDisclaimerAcceptance(storage)).toBe(false);
     storage.setItem(DISCLAIMER_STORAGE_KEY, "2020-01-01");
     expect(readDisclaimerAcceptance(storage)).toBe(false);

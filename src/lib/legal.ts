@@ -36,7 +36,7 @@ export const TERMS_OF_SERVICE: LegalDocument = {
       blocks: [
         {
           kind: "p",
-          text: 'Anonymouse ("the Platform," "we," "us," or "our"), operated by [Company Name Limited], a company incorporated in Hong Kong, is the service at anonymouse.lol. [Company Name Limited] and [Registered Hong Kong Business Address] are placeholders for the operator\'s registered details. These Terms of Service, together with the Privacy Policy and Personal Information Collection Statement, are the rules for using the Platform.',
+          text: 'Anonymouse ("the Platform," "we," "us," or "our") is the service at anonymouse.lol. These Terms of Service, together with the Privacy Policy and Personal Information Collection Statement, are the rules for using the Platform.',
         },
         {
           kind: "p",
@@ -97,11 +97,7 @@ export const TERMS_OF_SERVICE: LegalDocument = {
         },
         {
           kind: "p",
-          text: "Upon actual notice or knowledge of unlawful User Content that we hold or control, including in a space we operate, we will take expeditious steps to remove or disable access to that content to the extent we can. We may also refuse further sign-in codes or end access to the extent the product can do that. We cannot delete a chat that exists only on someone else's device and was never provided to us.",
-        },
-        {
-          kind: "p",
-          text: "Reports of unlawful content, copyright infringement, or doxxing may be sent to abuse@anonymouse.lol. Include enough detail to identify content that is within our possession or control. A report filed inside the app is stored on that device. It reaches us only if you also send it to that address or we otherwise come into possession of it.",
+          text: "Upon actual notice or knowledge of unlawful User Content that we hold or control, including in a space we operate, we will take expeditious steps to remove or disable access to that content to the extent we can. We may also refuse further sign-in codes or end access to the extent the product can do that. We cannot delete a chat that exists only on someone else's device and was never provided to us. A report that exists only on a device is not notice to us.",
         },
       ],
     },
@@ -127,11 +123,11 @@ export const TERMS_OF_SERVICE: LegalDocument = {
         },
         {
           kind: "p",
-          text: "Subject to that, [Company Name Limited], its directors, officers, and employees are not liable for indirect, consequential, or special loss, loss of profit, or damage arising from third-party defamatory, offensive, or unlawful User Content, or from interruption, delay, or unavailability of the service. To the maximum extent permitted by law, our total aggregate liability arising out of or in connection with the Platform or these Terms shall not exceed HK$1,000 or the total fees you paid us in the preceding twelve (12) months, whichever is greater.",
+          text: "Subject to that, Anonymouse and the people who operate the service are not liable for indirect, consequential, or special loss, loss of profit, or damage arising from third-party defamatory, offensive, or unlawful User Content, or from interruption, delay, or unavailability of the service. To the maximum extent permitted by law, our total aggregate liability arising out of or in connection with the Platform or these Terms shall not exceed HK$1,000 or the total fees you paid us in the preceding twelve (12) months, whichever is greater.",
         },
         {
           kind: "p",
-          text: "You agree to indemnify and hold harmless [Company Name Limited], its directors, officers, and employees from and against claims, liabilities, damages, losses, and legal costs (on a full indemnity basis) arising out of your breach of these Terms, your violation of Hong Kong law, your User Content, or your infringement of a third party's rights, to the extent Hong Kong law allows that indemnity. The indemnity does not require you to cover a liability the law says cannot be shifted.",
+          text: "You agree to indemnify and hold harmless Anonymouse and the people who operate the service from and against claims, liabilities, damages, losses, and legal costs (on a full indemnity basis) arising out of your breach of these Terms, your violation of Hong Kong law, your User Content, or your infringement of a third party's rights, to the extent Hong Kong law allows that indemnity. The indemnity does not require you to cover a liability the law says cannot be shifted.",
         },
       ],
     },
@@ -184,7 +180,7 @@ export const PRIVACY_POLICY: LegalDocument = {
       blocks: [
         {
           kind: "p",
-          text: '[Company Name Limited] ("we," "us," or "our"), operator of Anonymouse at anonymouse.lol, publishes this statement under the Personal Data (Privacy) Ordinance (Cap. 486) ("PDPO"). It is our Personal Information Collection Statement for the data described below. [Registered Hong Kong Business Address] is a placeholder for the registered office. We do not ask for your real name, residential address, or Hong Kong Identity Card number.',
+          text: 'Anonymouse ("the Platform," "we," "us," or "our") publishes this statement for the service at anonymouse.lol under the Personal Data (Privacy) Ordinance (Cap. 486) ("PDPO"). It is our Personal Information Collection Statement for the data described below. We do not ask for your real name, residential address, or Hong Kong Identity Card number.',
         },
         {
           kind: "p",
@@ -206,10 +202,6 @@ export const PRIVACY_POLICY: LegalDocument = {
           kind: "p",
           text: "What this product does not collect. We do not collect push-notification tokens, and we do not collect diagnostic logs, device operating-system details, or app-version analytics as a product feature. An email address is required in order to send a one-time code. Other profile details are what you choose to enter on the device. If the browser cannot reach the site or the auth service, sign-in cannot finish.",
         },
-        {
-          kind: "p",
-          text: "Correspondence. If you write to abuse@anonymouse.lol or privacy@anonymouse.lol, we receive the message you send, including your email address and whatever you include in it.",
-        },
       ],
     },
     {
@@ -224,7 +216,6 @@ export const PRIVACY_POLICY: LegalDocument = {
           items: [
             "Sending and checking the one-time sign-in code, and signing you back in on that device.",
             "Applying the in-memory limits that reduce repeated or automated code requests.",
-            "Reading and answering mail sent to abuse@anonymouse.lol or privacy@anonymouse.lol.",
             "Complying with a valid Hong Kong court order, warrant, or statutory notice, limited to data in our possession or control.",
           ],
         },
@@ -252,7 +243,6 @@ export const PRIVACY_POLICY: LegalDocument = {
             "Our auth process does not keep the email address after it has passed the address to Twilio Verify for that request. Twilio Verify and SendGrid handle the address on their systems in order to send and check the code.",
             "In-memory anti-abuse counters last only while they are inside the short limit window, and they are discarded when the auth process restarts. There is no timed server archive of those counters.",
             "The email address, profile, and chats in browser storage remain on that device until the app drops expired messages, you remove them, or you clear the site data. We do not hold a server copy of those chats.",
-            "Mail sent to abuse@anonymouse.lol or privacy@anonymouse.lol is kept only as long as needed to deal with that message and any legal duty that applies to it. The product does not put that mail in a separate database with its own retention clock.",
           ],
         },
         {
@@ -304,33 +294,11 @@ export const PRIVACY_POLICY: LegalDocument = {
         },
         {
           kind: "p",
-          text: "Email privacy@anonymouse.lol from the email address you use to sign in, and say whether you want access, correction, or both. We use that address to match the request to the sign-in address passed to the code processor. We do not ask for a cryptographic proof or a session key. We may ask you to show that you can still read mail at that address before we reply with personal data. Because rooms, MSG, and Match stay on your device, we may hold little or none of that content. We cannot return chats that were never sent to us. You can remove the on-device copy by clearing the site data in your browser.",
+          text: "If you make a request, send it from the email address you use to sign in. We match the request to that address. This statement does not publish a separate contact address. We do not ask for a cryptographic proof or a session key. We may ask you to show that you can still read mail at that address before we reply with personal data. Because rooms, MSG, and Match stay on your device, we may hold little or none of that content. We cannot return chats that were never sent to us. You can remove the on-device copy by clearing the site data in your browser.",
         },
         {
           kind: "p",
-          text: "We will answer a valid request within 40 calendar days. We may charge a reasonable, non-excessive fee for complying with a data access request, as the PDPO allows.",
-        },
-      ],
-    },
-    {
-      heading: "7. Data Protection Officer (DPP 5)",
-      blocks: [
-        {
-          kind: "p",
-          text: "Questions about this statement, and data access or correction requests, go to:",
-        },
-        {
-          kind: "list",
-          items: [
-            "Title: Data Protection Officer",
-            "Company: [Company Name Limited]",
-            "Address: [Registered Hong Kong Business Address]",
-            "Email: privacy@anonymouse.lol",
-          ],
-        },
-        {
-          kind: "p",
-          text: "Notices about unlawful content may be sent to abuse@anonymouse.lol. This statement does not give up a right the PDPO says cannot be given up.",
+          text: "We will answer a valid request within 40 calendar days. We may charge a reasonable, non-excessive fee for complying with a data access request, as the PDPO allows. This statement does not give up a right the PDPO says cannot be given up.",
         },
       ],
     },
