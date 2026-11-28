@@ -166,7 +166,7 @@ export function MeScreen() {
             Sign out
           </Button>
           <Button type="button" variant="ghost" onClick={() => setResetOpen(true)}>
-            Reset demo
+            Reset this device
           </Button>
           <Button type="button" variant="ghost" asChild>
             <Link to="/admin">Moderation log</Link>
@@ -178,7 +178,7 @@ export function MeScreen() {
           <DialogHeader>
             <DialogTitle>Reset this device?</DialogTitle>
             <DialogDescription>
-              Clears the session, profile, joined rooms, friends, taps, and conversations, then restores the seeded rooms.
+              Clears the session, profile, rooms, friends, taps, and conversations stored on this device.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

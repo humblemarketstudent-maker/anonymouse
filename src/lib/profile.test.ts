@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { profileDraftStatus } from "@/lib/profile";
 
 const saved = { alias: "TapeMouse", bioQuote: "Flat into the print", hashtags: ["markets", "nyc"] };
-const users = [{ id: "hum_me", alias: "TapeMouse" }, { id: "usr_macro", alias: "MacroMouse" }];
+const users = [{ id: "hum_me", alias: "TapeMouse" }, { id: "hum_other", alias: "OtherMouse" }];
 
 describe("profileDraftStatus", () => {
   it("enables save for a quote-only edit", () => {
@@ -68,7 +68,7 @@ describe("profileDraftStatus", () => {
       }).canSave,
     ).toBe(true);
     const taken = profileDraftStatus({
-      alias: "MacroMouse",
+      alias: "OtherMouse",
       bio: "Still here",
       tags: saved.hashtags,
       saved,

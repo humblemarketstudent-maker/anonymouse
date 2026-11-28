@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MOCK_USERS, NEWS_ITEMS, SEED_CHATTERS, SEED_ROOMS } from "@/data/floor";
+import { NEWS_ITEMS } from "@/data/floor";
 import { contactViolation } from "@/lib/contact";
 import { createMemoryJournal } from "@/moderation/journal";
 import { NOTICE } from "@/moderation/notices";
@@ -37,7 +37,7 @@ describe("PII masking", () => {
       ["my bbg id is 8f3a9c21 today", "my **** today", "bloomberg"],
     ];
     for (const [raw, masked, kind] of cases) {
-      const result = evaluate({ parts: { body: raw }, channelId: "room_market", actorId: "hum_test" });
+      const result = evaluate({ parts: { body: raw }, channelId: "room_desk", actorId: "hum_test" });
       expect(result.action, raw).toBe("redact");
       expect(result.pii_redacted, raw).toBe(true);
       expect(result.redacted_types, raw).toContain(kind);
@@ -49,9 +49,6 @@ describe("PII masking", () => {
 
   it("keeps ordinary floor copy publishable", () => {
     const lines = [
-      ...SEED_CHATTERS.map((line) => line.body),
-      ...SEED_ROOMS.flatMap((room) => [room.name, room.blurb]),
-      ...MOCK_USERS.map((user) => user.bioQuote),
       ...NEWS_ITEMS.flatMap((item) => [item.url, item.title, item.summary]),
       "The dollar is the tell.",
       "look at the dot com bubble",
@@ -72,7 +69,7 @@ describe("confidential leaks", () => {
   it("blocks the message and alerts without the raw secret", () => {
     const journal = createMemoryJournal();
     const result = enforceSync(
-      { parts: { body: `prod key ${SECRET} thanks` }, channelId: "room_market", actorId: "hum_desk" },
+      { parts: { body: `prod key ${SECRET} thanks` }, channelId: "room_desk", actorId: "hum_desk" },
       { journal, now: 1_700_000_000_000 },
     );
     expect(result.action).toBe("block");
@@ -81,7 +78,7 @@ describe("confidential leaks", () => {
     const alerts = journal.listAlerts();
     expect(alerts).toHaveLength(1);
     expect(alerts[0]?.severity).toBe("high");
-    expect(alerts[0]?.channelId).toBe("room_market");
+    expect(alerts[0]?.channelId).toBe("room_desk");
     expect(alerts[0]?.reason).toBe("Confidential leak");
     expect(alerts[0]?.preview).toContain("****");
     expect(alerts[0]?.preview).not.toContain(SECRET);
@@ -129,7 +126,7 @@ describe("adult content and attachment scanning", () => {
       dataUrl: PNG,
     };
     const result = await evaluateAsync(
-      { parts: { body: "desk chart" }, attachment: file, channelId: "room_market" },
+      { parts: { body: "desk chart" }, attachment: file, channelId: "room_desk" },
       { scanner: () => new Promise(() => {}), scanTimeoutMs: 20 },
     );
     expect(result.action).toBe("quarantine");

@@ -1,16 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  BLAST_LINES,
-  LIVE_ROOMS,
-  MATCH_GREETINGS,
-  MOCK_USERS,
-  NEWS_ITEMS,
-  QUESTION_REPLIES,
-  REPLIES,
-  SEAT_THREADS,
-  SEED_CHATTERS,
-  SEED_ROOMS,
-} from "@/data/floor";
+import { NEWS_ITEMS } from "@/data/floor";
 import { CONTACT_BLOCKED, contactViolation } from "@/lib/contact";
 
 const ORDINARY = [
@@ -71,21 +60,8 @@ const BLOCKED: Array<[string, string]> = [
 ];
 
 describe("contactViolation", () => {
-  it("leaves ordinary conversation alone, including the seeded floor", () => {
+  it("leaves ordinary conversation alone", () => {
     for (const line of ORDINARY) expect(contactViolation(line), line).toBeNull();
-    for (const user of MOCK_USERS) expect(contactViolation(user.bioQuote), user.alias).toBeNull();
-    for (const room of SEED_ROOMS) {
-      expect(contactViolation(room.name), room.name).toBeNull();
-      expect(contactViolation(room.blurb), room.name).toBeNull();
-    }
-    for (const line of SEED_CHATTERS) expect(contactViolation(line.body), line.body).toBeNull();
-    for (const line of LIVE_ROOMS) expect(contactViolation(line.body), line.body).toBeNull();
-    for (const line of [...REPLIES, ...QUESTION_REPLIES, ...BLAST_LINES, ...MATCH_GREETINGS]) {
-      expect(contactViolation(line), line).toBeNull();
-    }
-    for (const thread of SEAT_THREADS) {
-      for (const line of thread.lines) expect(contactViolation(line.body), line.body).toBeNull();
-    }
     for (const item of NEWS_ITEMS) {
       expect(contactViolation(item.url), item.url).toBeNull();
       expect(contactViolation(item.title), item.title).toBeNull();

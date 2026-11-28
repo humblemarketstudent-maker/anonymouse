@@ -48,7 +48,7 @@ export function SetupScreen() {
             id="alias"
             value={alias}
             onChange={(event) => setAlias(event.target.value)}
-            placeholder="MacroMouse"
+            placeholder="QuietMouse"
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}
@@ -67,7 +67,7 @@ export function SetupScreen() {
             id="bio"
             value={bio}
             onChange={(event) => setBio(event.target.value)}
-            placeholder="Long volatility, short sleep"
+            placeholder="Here for the quieter version."
             maxLength={80}
             rows={2}
             className="min-h-16"

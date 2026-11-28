@@ -50,7 +50,7 @@ export function CreateRoomScreen() {
             id="room-name"
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="Night Desk"
+            placeholder="Side Room"
             maxLength={32}
             className="h-11"
             required

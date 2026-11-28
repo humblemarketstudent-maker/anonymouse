@@ -3,6 +3,7 @@ import { MESSAGE_TTL_MS, type ChatAttachment } from "@/backend/types";
 import { defaultAvatar } from "@/lib/avatar";
 import { NOTICE } from "@/moderation/notices";
 import { NEWS_ITEMS } from "@/data/floor";
+import { RETIRED_ROOM_IDS, RETIRED_USER_IDS } from "@/data/retired-stock";
 import { heatBars } from "@/lib/heat";
 import { createLocalBackend, STORAGE_KEY, threadIsUnsolicited, type Kv } from "@/backend/local";
 import { searchRooms } from "@/lib/search";
@@ -46,14 +47,66 @@ function setup(storage = memory(), random: () => number = () => 0.2, schedule?: 
   };
 }
 
-function openedThread(backend: ReturnType<typeof setup>["backend"], peerId = "usr_byte") {
+type Local = ReturnType<typeof setup>["backend"];
+
+const HOME = "tape@example.com";
+
+async function signBack(backend: Local, email = HOME) {
+  backend.signOut();
+  expect((await backend.requestOtp({ contact: email })).ok).toBe(true);
+  const verified = await backend.verifyOtp("000000");
+  expect(verified.ok).toBe(true);
+  if (verified.ok) expect(verified.needsProfile).toBe(false);
+}
+
+async function addPerson(backend: Local, email: string, alias: string, hashtags = ["books"]) {
+  backend.signOut();
+  expect((await backend.requestOtp({ contact: email })).ok).toBe(true);
+  expect((await backend.verifyOtp("000000")).ok).toBe(true);
+  expect(backend.completeProfile({ alias, bioQuote: "Quiet peer", hashtags }).ok).toBe(true);
+  return backend.getSnapshot().me!.id;
+}
+
+async function peersFor(backend: Local, count: number) {
+  const ids: string[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const n = String(index + 1).padStart(2, "0");
+    ids.push(await addPerson(backend, `peer${n}@example.com`, `Peer${n}`));
+  }
+  await signBack(backend);
+  backend.refreshMatch();
+  return ids;
+}
+
+async function receiveTap(backend: Local, email: string, alias: string) {
+  const meId = backend.getSnapshot().me!.id;
+  const peerId = await addPerson(backend, email, alias);
+  expect(backend.tapUser(meId).ok).toBe(true);
+  await signBack(backend);
+  const tap = backend.getSnapshot().incomingTaps.find((item) => item.fromId === peerId);
+  expect(tap).toBeTruthy();
+  return { peerId, tapId: tap!.id };
+}
+
+function openedThread(backend: Local, peerId: string) {
   const opened = backend.openThread(peerId);
   expect(opened.ok).toBe(true);
   if (!opened.ok) throw new Error("expected a thread");
   return opened.threadId;
 }
 
-function freshPeer(backend: ReturnType<typeof setup>["backend"]) {
+function ownRoom(backend: Local, name = "Mouse Hole") {
+  const created = backend.createRoom({
+    name,
+    blurb: "Smaller than the rest.",
+    hashtags: ["Night Owl", "quiet-rooms"],
+  });
+  expect(created.ok).toBe(true);
+  if (!created.ok) throw new Error("expected a room");
+  return created.roomId;
+}
+
+function freshPeer(backend: Local) {
   const snap = backend.getSnapshot();
   const id = snap.matchPeerIds.find((peerId) => !snap.threads.some((thread) => thread.peerId === peerId));
   expect(id).toBeTruthy();
@@ -85,6 +138,19 @@ async function signIn(storage = memory(), alias = "TapeMouse", random?: () => nu
 }
 
 describe("local anonymouse", () => {
+  it("starts empty of stock bots and stock rooms", () => {
+    const snap = setup().backend.getSnapshot();
+    expect(snap.users).toEqual([]);
+    expect(snap.rooms).toEqual([]);
+    expect(snap.chatters).toEqual([]);
+    expect(snap.threads).toEqual([]);
+    expect(snap.messages).toEqual([]);
+    expect(snap.friendIds).toEqual([]);
+    expect(snap.directory).toEqual([]);
+    const dumped = JSON.stringify(snap);
+    for (const id of [...RETIRED_USER_IDS, ...RETIRED_ROOM_IDS]) expect(dumped).not.toContain(id);
+  });
+
   it("accepts an email and the demo code, and rejects a phone number", async () => {
     const { backend } = setup();
     expect((await backend.verifyOtp("000000")).ok).toBe(false);
@@ -174,24 +240,28 @@ describe("local anonymouse", () => {
     expect(snap.me?.alias).toBe("TapeMouse");
     expect(snap.me?.hashtags).toEqual(["markets", "nyc"]);
     expect(snap.session?.method).toBe("email");
-    expect(snap.friendIds.length).toBe(4);
+    expect(snap.users.map((user) => user.id)).toEqual([snap.me?.id]);
+    expect(snap.directory).toEqual([]);
+    expect(snap.friendIds).toEqual([]);
+    expect(snap.rooms).toEqual([]);
+    expect(snap.joinedRoomIds).toEqual([]);
     expect(snap.threads).toHaveLength(0);
     expect(snap.messages).toHaveLength(0);
+    expect(snap.chatters).toHaveLength(0);
+    expect(snap.incomingTaps).toEqual([]);
+    expect(snap.matchPeerIds).toEqual([]);
+    expect(snap.matchEligibleIds).toEqual([]);
+    expect(snap.topHashtags.map((item) => item.tag)).toEqual(["markets", "nyc"]);
     expect(json).not.toContain("Still short. Smaller than I sound.");
-    expect(snap.joinedRoomIds).toEqual(["room_night", "room_library", "room_market"]);
-    expect(snap.incomingTaps.map((tap) => tap.fromId)).toEqual(["usr_keel"]);
-    expect(snap.matchPeerIds).toHaveLength(20);
-    expect(snap.matchPeerIds).not.toContain("usr_keel");
-    expect(snap.matchEligibleIds.length).toBeGreaterThanOrEqual(20);
-    expect(snap.topHashtags).toHaveLength(20);
-    expect(snap.topHashtags[0]!.count).toBeGreaterThanOrEqual(snap.topHashtags[1]!.count);
+    for (const id of [...RETIRED_USER_IDS, ...RETIRED_ROOM_IDS]) expect(json).not.toContain(id);
     expect(snap.tapsRemaining).toBe(20);
 
     const restored = setup(storage).backend;
     expect(restored.getSnapshot().me?.alias).toBe("TapeMouse");
     expect(restored.getSnapshot().me?.hashtags).toEqual(["markets", "nyc"]);
     expect(restored.getSnapshot().joinedRoomIds).toEqual(snap.joinedRoomIds);
-    expect(restored.getSnapshot().incomingTaps).toHaveLength(1);
+    expect(restored.getSnapshot().incomingTaps).toHaveLength(0);
+    expect(restored.getSnapshot().rooms).toEqual([]);
     expect(JSON.stringify(restored.getSnapshot())).not.toContain("tape@example.com");
     expect(JSON.stringify(restored.getSnapshot())).not.toContain("@");
 
@@ -251,11 +321,7 @@ describe("local anonymouse", () => {
 
   it("searches rooms by words and hashtags, and keeps a created room", async () => {
     const { backend } = await signIn();
-    const seeded = backend.getSnapshot().rooms;
-    expect(searchRooms(seeded, "library").some((room) => room.name === "The Library")).toBe(true);
-    expect(searchRooms(seeded, "#books").some((room) => room.name === "The Library")).toBe(true);
-    expect(searchRooms(seeded, "night desk").some((room) => room.name === "Night Desk")).toBe(true);
-    expect(searchRooms(seeded, "#library")).toEqual([]);
+    expect(backend.getSnapshot().rooms).toEqual([]);
 
     const created = backend.createRoom({
       name: "Mouse Hole",
@@ -269,6 +335,7 @@ describe("local anonymouse", () => {
     expect(hole?.hashtags).toEqual(["night-owl", "quiet-rooms"]);
     expect(searchRooms(rooms, "#quiet-rooms").map((room) => room.name)).toContain("Mouse Hole");
     expect(searchRooms(rooms, "smaller than").map((room) => room.name)).toContain("Mouse Hole");
+    expect(searchRooms(rooms, "#mouse")).toEqual([]);
     expect(backend.getSnapshot().joinedRoomIds[0]).toBe(created.roomId);
 
     expect(backend.leaveRoom(created.roomId).ok).toBe(true);
@@ -280,36 +347,44 @@ describe("local anonymouse", () => {
 
   it("posts, blasts, blocks, and burns without turning a friend into a tap", async () => {
     const { backend } = await signIn();
-    const beforeThreads = backend.getSnapshot().threads.length;
-    const added = backend.addFriend("usr_loom");
+    const peerId = await addPerson(backend, "loom@example.com", "LoomMouse");
+    await signBack(backend);
+    expect(backend.getSnapshot().threads).toHaveLength(0);
+    const added = backend.addFriend(peerId);
     expect(added.ok).toBe(true);
-    expect(backend.getSnapshot().friendIds).toContain("usr_loom");
-    expect(backend.getSnapshot().threads).toHaveLength(beforeThreads);
+    expect(backend.getSnapshot().friendIds).toContain(peerId);
+    expect(backend.getSnapshot().threads).toHaveLength(0);
     expect(backend.getSnapshot().tapsRemaining).toBe(20);
     expect(backend.getSnapshot().outgoingTaps).toHaveLength(0);
 
-    const friendId = backend.getSnapshot().friendIds[0]!;
+    const roomId = ownRoom(backend);
     const posted = backend.postChatter({
       body: "Flat, and saying so before the print.",
-      roomId: "room_market",
-      blastFriendIds: [friendId],
+      roomId,
+      blastFriendIds: [peerId],
     });
     expect(posted.ok).toBe(true);
     const after = backend.getSnapshot();
     expect(after.chatters.some((chatter) => chatter.body.includes("Flat, and saying"))).toBe(true);
-    const thread = after.threads.find((item) => item.peerId === friendId);
+    const thread = after.threads.find((item) => item.peerId === peerId);
     expect(thread?.preview.startsWith("Blast")).toBe(true);
     expect(thread?.origin).toBe("direct");
 
-    const authorId = after.chatters.find((chatter) => chatter.authorId !== after.me?.id)?.authorId;
-    expect(authorId).toBeTruthy();
-    backend.blockUser(authorId!);
-    expect(backend.getSnapshot().chatters.some((chatter) => chatter.authorId === authorId)).toBe(false);
-    expect(backend.openThread(authorId!).ok).toBe(false);
-    backend.unblockUser(authorId!);
-    expect(backend.getSnapshot().chatters.some((chatter) => chatter.authorId === authorId)).toBe(true);
+    backend.signOut();
+    expect((await backend.requestOtp({ contact: "loom@example.com" })).ok).toBe(true);
+    expect((await backend.verifyOtp("000000")).ok).toBe(true);
+    expect(backend.joinRoom(roomId).ok).toBe(true);
+    expect(backend.postChatter({ body: "From the other desk.", roomId }).ok).toBe(true);
+    await signBack(backend);
+    expect(backend.getSnapshot().chatters.some((chatter) => chatter.body === "From the other desk.")).toBe(true);
+    backend.blockUser(peerId);
+    expect(backend.getSnapshot().chatters.some((chatter) => chatter.authorId === peerId)).toBe(false);
+    expect(backend.getSnapshot().chatters.some((chatter) => chatter.body.includes("Flat, and saying"))).toBe(true);
+    expect(backend.openThread(peerId).ok).toBe(false);
+    backend.unblockUser(peerId);
+    expect(backend.getSnapshot().chatters.some((chatter) => chatter.authorId === peerId)).toBe(true);
 
-    const open = backend.openThread(friendId);
+    const open = backend.openThread(peerId);
     expect(open.ok).toBe(true);
     if (!open.ok) return;
     expect(backend.sendMessage(open.threadId, "Still with you.").ok).toBe(true);
@@ -317,7 +392,7 @@ describe("local anonymouse", () => {
     expect(backend.getSnapshot().threads.some((item) => item.id === open.threadId)).toBe(false);
     expect(backend.endMatch(open.threadId).ok).toBe(false);
 
-    backend.report({ targetType: "user", targetId: friendId, reason: "Spam or solicitation" });
+    backend.report({ targetType: "user", targetId: peerId, reason: "Spam or solicitation" });
     expect(backend.debug().reports).toBe(1);
     expect(backend.addFriend(after.me!.id).ok).toBe(false);
   });
@@ -325,6 +400,7 @@ describe("local anonymouse", () => {
   it("limits taps to twenty a day and resets on the next local day", async () => {
     const storage = memory();
     const { backend, advance } = await signIn(storage);
+    await peersFor(backend, 21);
     const snap = backend.getSnapshot();
     const ids = [...snap.matchPeerIds];
     expect(ids).toHaveLength(20);
@@ -350,7 +426,7 @@ describe("local anonymouse", () => {
 
   it("keeps an outgoing tap pending and opens MSG when an incoming tap is accepted", async () => {
     const accepted = await signIn(memory(), "TapeMouse", () => 0.1, true);
-    const peerId = freshPeer(accepted.backend);
+    const [peerId] = await peersFor(accepted.backend, 1);
     expect(accepted.backend.tapUser(peerId).ok).toBe(true);
     const after = accepted.backend.getSnapshot();
     expect(after.tapsRemaining).toBe(19);
@@ -360,19 +436,20 @@ describe("local anonymouse", () => {
     accepted.backend.refreshMatch();
     expect(accepted.backend.getSnapshot().matchPeerIds).not.toContain(peerId);
 
-    const incoming = after.incomingTaps[0]!;
-    const started = accepted.backend.acceptTap(incoming.id);
+    const incoming = await receiveTap(accepted.backend, "incoming@example.com", "IncomingMouse");
+    const started = accepted.backend.acceptTap(incoming.tapId);
     expect(started.ok).toBe(true);
     if (!started.ok) return;
     const thread = accepted.backend.getSnapshot().threads.find((item) => item.id === started.threadId);
     expect(thread?.origin).toBe("match");
     expect(accepted.backend.endMatch(started.threadId).ok).toBe(true);
     accepted.backend.refreshMatch();
-    expect(accepted.backend.getSnapshot().matchPeerIds).not.toContain(incoming.fromId);
+    expect(accepted.backend.getSnapshot().matchPeerIds).not.toContain(incoming.peerId);
   });
 
   it("drops an unanswered tap after an hour and keeps them out of the next shuffle", async () => {
     const { backend, advance } = await signIn();
+    await peersFor(backend, 1);
     const peerId = freshPeer(backend);
     expect(backend.tapUser(peerId).ok).toBe(true);
     const pending = backend.getSnapshot().outgoingTaps[0]!;
@@ -388,7 +465,8 @@ describe("local anonymouse", () => {
 
   it("ends a chat from the list and does not restore that thread", async () => {
     const { backend } = await signIn();
-    const threadId = openedThread(backend, "usr_byte");
+    const [peerId] = await peersFor(backend, 1);
+    const threadId = openedThread(backend, peerId);
     const thread = backend.getSnapshot().threads.find((item) => item.id === threadId)!;
     expect(backend.sendMessage(thread.id, "Still with you.").ok).toBe(true);
     expect(backend.endChat(thread.id).ok).toBe(true);
@@ -404,22 +482,24 @@ describe("local anonymouse", () => {
 
   it("ends a match chat and keeps that alias out of the next pass", async () => {
     const accepted = await signIn(memory(), "TapeMouse", () => 0.1, true);
-    const incoming = accepted.backend.getSnapshot().incomingTaps[0]!;
-    const started = accepted.backend.acceptTap(incoming.id);
+    const incoming = await receiveTap(accepted.backend, "incoming@example.com", "IncomingMouse");
+    const started = accepted.backend.acceptTap(incoming.tapId);
     expect(started.ok).toBe(true);
     if (!started.ok) return;
     expect(accepted.backend.endChat(started.threadId).ok).toBe(true);
     expect(accepted.backend.getSnapshot().threads.some((item) => item.id === started.threadId)).toBe(false);
     accepted.backend.refreshMatch();
-    expect(accepted.backend.getSnapshot().matchPeerIds).not.toContain(incoming.fromId);
-    expect(accepted.backend.getSnapshot().matchEligibleIds).not.toContain(incoming.fromId);
+    expect(accepted.backend.getSnapshot().matchPeerIds).not.toContain(incoming.peerId);
+    expect(accepted.backend.getSnapshot().matchEligibleIds).not.toContain(incoming.peerId);
   });
 
   it("deletes messages and room lines on a rolling 3-day clock", async () => {
     const { backend, advance } = await signIn();
-    const threadId = openedThread(backend);
+    const [peerId] = await peersFor(backend, 1);
+    const threadId = openedThread(backend, peerId);
+    const roomId = ownRoom(backend);
     expect(backend.sendMessage(threadId, "Still here today.").ok).toBe(true);
-    expect(backend.postChatter({ body: "Fresh take.", roomId: "room_market" }).ok).toBe(true);
+    expect(backend.postChatter({ body: "Fresh take.", roomId }).ok).toBe(true);
 
     advance(26 * 60 * 60 * 1000);
     const nextDay = backend.getSnapshot();
@@ -434,10 +514,9 @@ describe("local anonymouse", () => {
     const expired = backend.getSnapshot();
     expect(expired.messages.some((message) => message.body === "Still here today.")).toBe(false);
     expect(expired.chatters.some((chatter) => chatter.body === "Fresh take.")).toBe(false);
-    expect(expired.chatters.some((chatter) => chatter.body.includes("Auction feels heavy"))).toBe(false);
 
     expect(backend.sendMessage(threadId, "New after the purge.").ok).toBe(true);
-    expect(backend.postChatter({ body: "New room line.", roomId: "room_market" }).ok).toBe(true);
+    expect(backend.postChatter({ body: "New room line.", roomId }).ok).toBe(true);
     const revived = backend.getSnapshot();
     expect(revived.messages.some((message) => message.body === "New after the purge.")).toBe(true);
     expect(revived.chatters.some((chatter) => chatter.body === "New room line.")).toBe(true);
@@ -446,7 +525,9 @@ describe("local anonymouse", () => {
   it("purges old and personal messages already stored in the mock", async () => {
     const storage = memory();
     const { backend } = await signIn(storage);
-    const keptId = openedThread(backend, "usr_byte");
+    const [peerId] = await peersFor(backend, 1);
+    const keptId = openedThread(backend, peerId);
+    const roomId = ownRoom(backend);
     expect(backend.sendMessage(keptId, "Keep this line.").ok).toBe(true);
     const raw = storage.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
@@ -458,6 +539,7 @@ describe("local anonymouse", () => {
       notifications: object[];
     };
     const thread = parsed.threads[0]!;
+    const meId = backend.getSnapshot().me!.id;
     const old = parsed.savedAt - MESSAGE_TTL_MS - 60_000;
     parsed.messages.push({
       id: "msg_old",
@@ -469,8 +551,8 @@ describe("local anonymouse", () => {
     });
     parsed.chatters.push({
       id: "cht_old",
-      authorId: "usr_loom",
-      roomId: "room_market",
+      authorId: meId,
+      roomId,
       body: "Ancient room line",
       createdAt: old,
     });
@@ -484,8 +566,8 @@ describe("local anonymouse", () => {
     });
     parsed.chatters.push({
       id: "cht_pii",
-      authorId: "usr_loom",
-      roomId: "room_market",
+      authorId: meId,
+      roomId,
       body: "telegram is t.me/nightowl",
       createdAt: parsed.savedAt,
     });
@@ -512,7 +594,9 @@ describe("local anonymouse", () => {
 
   it("masks personal contact details in rooms and private threads", async () => {
     const { backend } = await signIn();
-    const threadId = openedThread(backend);
+    const [peerId] = await peersFor(backend, 1);
+    const threadId = openedThread(backend, peerId);
+    const roomId = ownRoom(backend);
     const blocked = [
       ["text me 212-555-0199", "212-555-0199"],
       ["jane at gmail dot com", "jane at gmail dot com"],
@@ -529,7 +613,7 @@ describe("local anonymouse", () => {
         expect(direct.pii_redacted, body).toBe(true);
         expect(direct.redacted_types.length, body).toBeGreaterThan(0);
       }
-      const room = backend.postChatter({ body, roomId: "room_market" });
+      const room = backend.postChatter({ body, roomId });
       expect(room.ok, body).toBe(true);
       const stored = JSON.stringify(backend.getSnapshot());
       expect(stored, body).not.toContain(raw);
@@ -540,13 +624,13 @@ describe("local anonymouse", () => {
     expect(
       backend.postChatter({
         body: "The dollar is the tell.",
-        roomId: "room_market",
+        roomId,
         news: NEWS_ITEMS[1],
       }).ok,
     ).toBe(true);
     const link = backend.postChatter({
       body: "",
-      roomId: "room_market",
+      roomId,
       news: {
         url: "https://t.me/nightowl",
         source: "Telegram",
@@ -562,10 +646,12 @@ describe("local anonymouse", () => {
 
   it("rejects a taken alias", async () => {
     const { backend } = setup();
+    await addPerson(backend, "first@example.com", "OtherMouse");
+    backend.signOut();
     await backend.requestOtp({ contact: "second@example.com" });
     await backend.verifyOtp("000000");
     const taken = backend.completeProfile({
-      alias: "MacroMouse",
+      alias: "OtherMouse",
       bioQuote: "Already taken",
       hashtags: ["books"],
     });
@@ -574,7 +660,8 @@ describe("local anonymouse", () => {
 
   it("blasts the same message into every selected chat, or into none", async () => {
     const { backend } = await signIn();
-    const ids = [openedThread(backend, "usr_macro"), openedThread(backend, "usr_folio")];
+    const [first, second] = await peersFor(backend, 2);
+    const ids = [openedThread(backend, first!), openedThread(backend, second!)];
     expect(backend.getSnapshot().threads.length).toBeGreaterThan(1);
     const empty = backend.blastThreads([], "Hello");
     expect(empty.ok).toBe(false);
@@ -598,7 +685,9 @@ describe("local anonymouse", () => {
   it("stores a file and a link card, and drops them with the message", async () => {
     const storage = memory();
     const { backend, advance } = await signIn(storage);
-    const threadId = openedThread(backend);
+    const [peerId] = await peersFor(backend, 1);
+    const threadId = openedThread(backend, peerId);
+    const roomId = ownRoom(backend);
     const file = textFile("hello", "attachment-token.txt");
     expect(backend.sendMessage(threadId, "See this", { attachment: file }).ok).toBe(true);
     expect(
@@ -611,7 +700,7 @@ describe("local anonymouse", () => {
         },
       }).ok,
     ).toBe(true);
-    const room = backend.postChatter({ body: "", roomId: "room_market", attachment: textFile("room", "brief.txt") });
+    const room = backend.postChatter({ body: "", roomId, attachment: textFile("room", "brief.txt") });
     expect(room.ok).toBe(true);
     const live = backend.getSnapshot();
     expect(live.messages.some((message) => message.attachment?.name === "attachment-token.txt")).toBe(true);
@@ -644,26 +733,24 @@ describe("local anonymouse", () => {
     expect(storage.getItem(STORAGE_KEY)).not.toContain("attachment-token.txt");
   });
 
-  it("spreads room heat across several bar levels", async () => {
+  it("counts heat from lines in a room the person created", async () => {
     const { backend } = await signIn();
+    expect(backend.getSnapshot().chatters).toEqual([]);
+    const roomId = ownRoom(backend);
+    expect(heatBars(0)).toBe(0);
+    expect(backend.postChatter({ body: "First line.", roomId }).ok).toBe(true);
     const snap = backend.getSnapshot();
     const newest = Math.max(...snap.chatters.map((chatter) => chatter.createdAt));
     const day = 24 * 60 * 60 * 1000;
-    const recent = (roomId: string) =>
-      snap.chatters.filter((chatter) => chatter.roomId === roomId && newest - chatter.createdAt <= day).length;
-    expect(heatBars(recent("room_market"))).toBe(5);
-    expect(heatBars(recent("room_ai"))).toBe(4);
-    expect(heatBars(recent("room_builders"))).toBe(3);
-    expect(heatBars(recent("room_crypto"))).toBe(2);
-    expect(heatBars(recent("room_deals"))).toBe(1);
-    expect(heatBars(recent("room_night"))).toBe(0);
-    expect(heatBars(recent("room_library"))).toBe(0);
+    const recent = snap.chatters.filter((chatter) => chatter.roomId === roomId && newest - chatter.createdAt <= day);
+    expect(recent).toHaveLength(1);
+    expect(heatBars(recent.length)).toBe(1);
   });
 
   it("saves a mouse on the profile and restores it", async () => {
     const storage = memory();
     const { backend } = await signIn(storage);
-    expect(backend.getSnapshot().users.find((user) => user.id === "usr_macro")?.avatar?.eyes).toBe("Glowing Neon");
+    expect(backend.getSnapshot().users).toHaveLength(1);
     expect(backend.setAvatar(defaultAvatar()).ok).toBe(true);
     expect(backend.getSnapshot().me?.avatar?.fur).toBe("Agouti Brown");
     const me = backend.getSnapshot().me!;
@@ -677,8 +764,9 @@ describe("local anonymouse", () => {
 
   it("keeps a permanent chat on MSG after the 3-day purge and drops a quiet one", async () => {
     const { backend, advance } = await signIn();
-    const keepId = openedThread(backend, "usr_macro");
-    const dropId = openedThread(backend, "usr_folio");
+    const [keepPeer, dropPeer] = await peersFor(backend, 2);
+    const keepId = openedThread(backend, keepPeer!);
+    const dropId = openedThread(backend, dropPeer!);
     const snap = backend.getSnapshot();
     const keep = snap.threads.find((thread) => thread.id === keepId)!;
     const drop = snap.threads.find((thread) => thread.id === dropId)!;
@@ -711,52 +799,147 @@ describe("local anonymouse", () => {
     expect(backend.getSnapshot().threads.some((thread) => thread.id === keep.id)).toBe(false);
   });
 
-  it("drops seeded and unsolicited chats, and keeps ones the user joined", async () => {
+  it("drops retired bots and rooms from a store that still has them", async () => {
     const storage = memory();
     const { backend } = await signIn(storage);
     const meId = backend.getSnapshot().me!.id;
+    const [friendId] = await peersFor(backend, 1);
+    const roomId = ownRoom(backend);
+    expect(backend.addFriend(friendId).ok).toBe(true);
+    const threadId = openedThread(backend, friendId!);
+    expect(backend.sendMessage(threadId, "Stay with me.").ok).toBe(true);
+    expect(backend.postChatter({ body: "My line.", roomId }).ok).toBe(true);
+
     const raw = JSON.parse(storage.getItem(STORAGE_KEY)!) as {
       savedAt: number;
+      accounts: object[];
+      rooms: object[];
+      memberships: object[];
+      chatters: object[];
       threads: object[];
       messages: object[];
+      friends: object[];
       notifications: object[];
+      taps: object[];
+      batches: { userId: string; peerIds: string[] }[];
     };
     const now = raw.savedAt;
+    for (const id of RETIRED_USER_IDS) {
+      if (id === "usr_folio") {
+        raw.accounts.push({
+          userId: id,
+          contact: "folio@example.com",
+          seated: true,
+          profile: { id, alias: "KeptMouse", bioQuote: "A real quote", hashtags: ["books"], joinedAt: now },
+        });
+        continue;
+      }
+      raw.accounts.push({
+        userId: id,
+        contact: null,
+        seated: true,
+        profile: { id, alias: "StockMouse", bioQuote: "Stock quote", hashtags: ["markets"], joinedAt: now },
+      });
+    }
+    for (const id of RETIRED_ROOM_IDS) {
+      raw.rooms.push({
+        id,
+        name: "Stock Room",
+        blurb: "Planted room",
+        hashtags: ["markets"],
+        createdBy: "usr_macro",
+        createdAt: now,
+        listeners: 40,
+      });
+      raw.memberships.push({ userId: meId, roomId: id, joinedAt: now });
+      raw.chatters.push({
+        id: `seed_${id}_4_usr_macro`,
+        authorId: "usr_macro",
+        roomId: id,
+        body: "STOCK_LINE",
+        createdAt: now,
+      });
+    }
+    raw.chatters.push(
+      { id: "heat_room_market_0", authorId: "usr_macro", roomId: "room_market", body: "STOCK_HEAT", createdAt: now },
+      { id: "cht_in_stock", authorId: meId, roomId: "room_market", body: "My line in a stock room", createdAt: now },
+    );
+    raw.rooms.push({
+      id: "room_custom_open",
+      name: "Market Open",
+      blurb: "My own open.",
+      hashtags: ["markets"],
+      createdBy: meId,
+      createdAt: now,
+      listeners: 1,
+    });
+    raw.memberships.push({ userId: meId, roomId: "room_custom_open", joinedAt: now });
+    raw.friends.push({ ownerId: meId, friendId: "usr_macro" }, { ownerId: meId, friendId: "usr_folio" });
     raw.threads.push(
-      { id: "thr_seed", a: meId, b: "usr_macro", origin: "direct", updatedAt: now, unread: 1, keptBy: [] },
-      { id: "thr_kept", a: meId, b: "usr_folio", origin: "direct", updatedAt: now, unread: 0, keptBy: [meId] },
-      { id: "thr_real", a: meId, b: "usr_byte", origin: "direct", updatedAt: now, unread: 0, keptBy: [] },
-      { id: "thr_blast", a: meId, b: "usr_lane", origin: "direct", updatedAt: now, unread: 1, keptBy: [] },
-      { id: "thr_match", a: meId, b: "usr_keel", origin: "match", updatedAt: now, unread: 0, keptBy: [] },
-      { id: "thr_open", a: meId, b: "usr_loom", origin: "direct", updatedAt: now, unread: 0, keptBy: [], engagedBy: [meId] },
+      { id: "thr_stock", a: meId, b: "usr_macro", origin: "direct", updatedAt: now, unread: 1, keptBy: [meId], engagedBy: [meId] },
+      { id: "thr_kept_real", a: meId, b: "usr_folio", origin: "direct", updatedAt: now, unread: 0, keptBy: [meId], engagedBy: [meId] },
     );
     raw.messages.push(
-      { id: "m1", threadId: "thr_seed", senderId: "usr_macro", body: "You still short the front end, or did someone talk you out of it?", kind: "text", createdAt: now },
-      { id: "m2", threadId: "thr_seed", senderId: meId, body: "Still short. Smaller than I sound.", kind: "text", createdAt: now },
-      { id: "m3", threadId: "thr_kept", senderId: "usr_folio", body: "Read anything this week that wasn't a memo?", kind: "text", createdAt: now },
-      { id: "m4", threadId: "thr_real", senderId: meId, body: "I started this.", kind: "text", createdAt: now },
-      { id: "m5", threadId: "thr_blast", senderId: "usr_lane", body: "Not advice. Also not nothing.", kind: "blast", createdAt: now },
-      { id: "m6", threadId: "thr_match", senderId: "usr_keel", body: "You tapped. I'm here.", kind: "text", createdAt: now },
+      { id: "msg_stock", threadId: "thr_stock", senderId: meId, body: "I wrote back to the stock alias.", kind: "text", createdAt: now },
+      { id: "msg_folio", threadId: "thr_kept_real", senderId: "usr_folio", body: "Read anything this week that wasn't a memo?", kind: "text", createdAt: now },
+      { id: "msg_folio_me", threadId: "thr_kept_real", senderId: meId, body: "This one stays.", kind: "text", createdAt: now },
     );
+    raw.taps.push({ id: "tap_stock", fromId: "usr_keel", toId: meId, status: "pending", createdAt: now });
     raw.notifications.push({
-      id: "n1",
+      id: "note_stock",
       userId: meId,
-      title: "MacroMouse",
-      body: "Respect. The loud version of that trade is the one that gets hurt.",
-      threadId: "thr_seed",
+      title: "Stock",
+      body: "tapped you",
+      peerId: "usr_keel",
+      threadId: "thr_stock",
       createdAt: now,
       read: false,
     });
+    const batch = raw.batches.find((item) => item.userId === meId);
+    if (batch) batch.peerIds.push("usr_macro", "usr_folio");
+    else raw.batches.push({ userId: meId, peerIds: [friendId!, "usr_macro", "usr_folio"] });
     storage.setItem(STORAGE_KEY, JSON.stringify(raw));
 
     const restored = setup(storage).backend;
-    const ids = restored.getSnapshot().threads.map((thread) => thread.id).sort();
-    expect(ids).toEqual(["thr_kept", "thr_match", "thr_open", "thr_real"]);
+    const snap = restored.getSnapshot();
+    expect(snap.me?.alias).toBe("TapeMouse");
+    expect(snap.users.some((user) => user.alias === "StockMouse")).toBe(false);
+    expect(snap.users.some((user) => user.alias === "KeptMouse")).toBe(true);
+    expect(snap.users.some((user) => user.id === friendId)).toBe(true);
+    expect(snap.directory.some((user) => user.id === "usr_macro")).toBe(false);
+    expect(snap.friendIds).toContain(friendId);
+    expect(snap.friendIds).toContain("usr_folio");
+    expect(snap.friendIds).not.toContain("usr_macro");
+    expect(snap.rooms.map((room) => room.id).sort()).toEqual([roomId, "room_custom_open"].sort());
+    expect(snap.joinedRoomIds).toEqual(expect.arrayContaining([roomId, "room_custom_open"]));
+    for (const id of RETIRED_ROOM_IDS) {
+      expect(snap.rooms.some((room) => room.id === id)).toBe(false);
+      expect(snap.joinedRoomIds).not.toContain(id);
+    }
+    for (const id of RETIRED_USER_IDS) {
+      if (id === "usr_folio") continue;
+      expect(snap.users.some((user) => user.id === id)).toBe(false);
+      expect(snap.matchPeerIds).not.toContain(id);
+      expect(snap.threads.some((thread) => thread.peerId === id)).toBe(false);
+    }
+    expect(snap.chatters.some((chatter) => chatter.body === "My line.")).toBe(true);
+    expect(snap.chatters.some((chatter) => chatter.body === "STOCK_LINE")).toBe(false);
+    expect(snap.chatters.some((chatter) => chatter.body === "STOCK_HEAT")).toBe(false);
+    expect(snap.chatters.some((chatter) => chatter.body === "My line in a stock room")).toBe(false);
+    expect(snap.threads.map((thread) => thread.id).sort()).toEqual([threadId, "thr_kept_real"].sort());
+    expect(snap.messages.some((message) => message.body === "Stay with me.")).toBe(true);
+    expect(snap.messages.some((message) => message.body === "This one stays.")).toBe(true);
+    expect(snap.messages.some((message) => message.body === "I wrote back to the stock alias.")).toBe(false);
+    expect(snap.incomingTaps).toEqual([]);
+    expect(JSON.stringify(snap)).not.toContain("folio@example.com");
     const stored = storage.getItem(STORAGE_KEY) ?? "";
-    expect(stored).not.toContain("You still short the front end");
-    expect(stored).not.toContain("Respect. The loud version");
-    expect(stored).not.toContain("thr_blast");
-    expect(restored.getSnapshot().messages.some((message) => message.body === "I started this.")).toBe(true);
+    expect(stored).not.toContain("usr_macro");
+    expect(stored).not.toContain("usr_keel");
+    expect(stored).not.toContain("room_market");
+    expect(stored).not.toContain("STOCK_LINE");
+    expect(stored).toContain("Stay with me.");
+    expect(stored).toContain("Mouse Hole");
+    expect(stored).toContain("usr_folio");
     expect(threadIsUnsolicited(
       { a: meId, b: "usr_lane", origin: "direct", keptBy: [], engagedBy: [] },
       [{ senderId: "usr_lane", body: "Not advice. Also not nothing.", kind: "blast" }],
@@ -764,7 +947,21 @@ describe("local anonymouse", () => {
     )).toBe(true);
   });
 
-  it("does not invent a private chat from the live timer", async () => {
+  it("reset clears this device and does not restore stock rooms", async () => {
+    const { backend } = await signIn();
+    const roomId = ownRoom(backend);
+    expect(backend.getSnapshot().rooms.map((room) => room.id)).toEqual([roomId]);
+    backend.resetFloor();
+    const snap = backend.getSnapshot();
+    expect(snap.session).toBeNull();
+    expect(snap.me).toBeNull();
+    expect(snap.rooms).toEqual([]);
+    expect(snap.users).toEqual([]);
+    const dumped = JSON.stringify(snap);
+    for (const id of [...RETIRED_USER_IDS, ...RETIRED_ROOM_IDS]) expect(dumped).not.toContain(id);
+  });
+
+  it("does not invent stock chats from the live timer", async () => {
     const queued: { fn: (() => void) | null } = { fn: null };
     const storage = memory();
     let clock = 1_700_000_000_000;
@@ -783,33 +980,35 @@ describe("local anonymouse", () => {
     await backend.verifyOtp("000000");
     expect(backend.completeProfile({ alias: "TapeMouse", bioQuote: "Flat into the print", hashtags: ["markets"] }).ok).toBe(true);
     expect(backend.getSnapshot().threads).toHaveLength(0);
+    expect(backend.getSnapshot().rooms).toHaveLength(0);
     backend.startLive();
     queued.fn?.();
-    expect(backend.getSnapshot().threads).toHaveLength(0);
-    const opened = backend.openThread("usr_macro");
-    expect(opened.ok).toBe(true);
-    const before = backend.getSnapshot().messages.length;
-    queued.fn?.();
     clock += 1;
-    expect(backend.getSnapshot().threads).toHaveLength(1);
-    expect(backend.getSnapshot().messages.length).toBeGreaterThan(before);
+    const snap = backend.getSnapshot();
+    expect(snap.threads).toHaveLength(0);
+    expect(snap.messages).toHaveLength(0);
+    expect(snap.rooms).toHaveLength(0);
+    expect(snap.incomingTaps).toHaveLength(0);
+    expect(snap.directory).toHaveLength(0);
+    expect(backend.openThread("usr_macro").ok).toBe(false);
     backend.stopLive();
   });
 
   it("puts the signed-in mouse on that profile for MSG to read", async () => {
     const { backend } = await signIn();
+    const [peerId] = await peersFor(backend, 1);
     const me = backend.getSnapshot().me!;
     expect(backend.setAvatar(defaultAvatar()).ok).toBe(true);
     const users = backend.getSnapshot().users;
     expect(users.find((user) => user.id === me.id)?.avatar?.fur).toBe("Agouti Brown");
-    expect(users.find((user) => user.id === "usr_folio")?.avatar?.headwear).toBe("Beanie");
-    expect(users.find((user) => user.id === "usr_byte")?.avatar ?? null).toBeNull();
-    openedThread(backend, "usr_byte");
-    expect(backend.getSnapshot().threads.map((thread) => thread.peerId)).toEqual(["usr_byte"]);
+    expect(users.find((user) => user.id === peerId)?.avatar ?? null).toBeNull();
+    openedThread(backend, peerId!);
+    expect(backend.getSnapshot().threads.map((thread) => thread.peerId)).toEqual([peerId]);
   });
 
   it("drops an opened chat with no messages after 3 days of inactivity", async () => {
     const { backend, advance } = await signIn();
+    await peersFor(backend, 1);
     const peerId = freshPeer(backend);
     const opened = backend.openThread(peerId);
     expect(opened.ok).toBe(true);

@@ -20,23 +20,8 @@ import {
   type ThreadSummary,
 } from "@/backend/types";
 import { emailSignInError, normalizeEmail } from "@/backend/email";
-import {
-  BLAST_LINES,
-  LIVE_ROOMS,
-  MATCH_GREETINGS,
-  MOCK_USERS,
-  NEWS_ITEMS,
-  QUESTION_REPLIES,
-  REPLIES,
-  SEAT_THREADS,
-  SEED_CHATTERS,
-  SEED_ROOMS,
-  HEAT_FILL,
-  SEEDED_FRIENDS,
-  SEEDED_INCOMING,
-  SEEDED_ROOMS,
-} from "@/data/floor";
-import { coerceAvatar, DEMO_AVATARS, parseAvatar, type MouseAvatar } from "@/lib/avatar";
+import { RETIRED_BLAST_LINES, RETIRED_ROOM_IDS, RETIRED_SEAT_THREADS, RETIRED_USER_IDS } from "@/data/retired-stock";
+import { coerceAvatar, parseAvatar, type MouseAvatar } from "@/lib/avatar";
 import { contactViolation } from "@/lib/contact";
 import type { Journal } from "@/moderation/journal";
 import { createJournal } from "@/moderation/journal";
@@ -263,10 +248,10 @@ export function threadIsUnsolicited(
   if (thread.keptBy.includes(human) || thread.engagedBy?.includes(human)) return false;
   if (lines.length === 0) return false;
   const peer = thread.a === human ? thread.b : thread.a;
-  const script = SEAT_THREADS.find((item) => item.peerId === peer);
+  const script = RETIRED_SEAT_THREADS.find((item) => item.peerId === peer);
   const fromMe = new Set(script?.lines.filter((line) => line.from === "me").map((line) => line.body) ?? []);
   const fromPeer = new Set(script?.lines.filter((line) => line.from === "peer").map((line) => line.body) ?? []);
-  const blasts = new Set<string>(BLAST_LINES);
+  const blasts = new Set<string>(RETIRED_BLAST_LINES);
   if (lines.some((line) => line.senderId === human && !fromMe.has(line.body))) return false;
   return lines.every((line) => {
     if (line.senderId === human) return fromMe.has(line.body);
@@ -293,7 +278,7 @@ function omitUnsolicited(target: State) {
     const lines = target.messages.filter((message) => message.threadId === thread.id);
     for (const human of [thread.a, thread.b].filter((id) => humanIds.has(id))) {
       const peer = thread.a === human ? thread.b : thread.a;
-      const script = SEAT_THREADS.find((item) => item.peerId === peer);
+      const script = RETIRED_SEAT_THREADS.find((item) => item.peerId === peer);
       const fromMe = new Set(script?.lines.filter((line) => line.from === "me").map((line) => line.body) ?? []);
       const participated =
         thread.origin === "match" ||
@@ -306,6 +291,89 @@ function omitUnsolicited(target: State) {
   target.threads = target.threads.filter((thread) => !drop.has(thread.id));
   target.messages = target.messages.filter((message) => !drop.has(message.threadId));
   target.notifications = target.notifications.filter((note) => !note.threadId || !drop.has(note.threadId));
+}
+
+const RETIRED_USERS = new Set<string>(RETIRED_USER_IDS);
+const RETIRED_ROOMS = new Set<string>(RETIRED_ROOM_IDS);
+
+function emptyState(): State {
+  return {
+    accounts: [],
+    sessionUserId: null,
+    rooms: [],
+    memberships: [],
+    chatters: [],
+    threads: [],
+    messages: [],
+    friends: [],
+    blocks: [],
+    reports: [],
+    notifications: [],
+    taps: [],
+    exclusions: [],
+    batches: [],
+    tapDays: [],
+  };
+}
+
+/**
+ * Drop stock bots and stock rooms saved by an older build.
+ * A retired id with no sign-in email is one of those bots. A person's own
+ * profile keeps its email and a generated id, so their rooms, friends, and
+ * threads stay. A retired id that already has an email is left in place,
+ * because that row cannot be told apart from an account they created.
+ */
+function stripRetiredStock(target: State) {
+  const spared = new Set(
+    target.accounts
+      .filter((account) => account.contact && RETIRED_USERS.has(account.userId))
+      .map((account) => account.userId),
+  );
+  const bot = (id: string) => RETIRED_USERS.has(id) && !spared.has(id);
+  const stockRoom = (id: string) => RETIRED_ROOMS.has(id);
+
+  target.accounts = target.accounts.filter((account) => !bot(account.userId));
+  if (target.sessionUserId && bot(target.sessionUserId)) target.sessionUserId = null;
+
+  const droppedRooms = new Set(target.rooms.filter((room) => stockRoom(room.id)).map((room) => room.id));
+  target.rooms = target.rooms.filter((room) => !droppedRooms.has(room.id));
+  target.memberships = target.memberships.filter(
+    (membership) => !droppedRooms.has(membership.roomId) && !bot(membership.userId),
+  );
+  target.chatters = target.chatters.filter((chatter) => {
+    if (droppedRooms.has(chatter.roomId) || bot(chatter.authorId)) return false;
+    return !chatter.id.startsWith("seed_") && !chatter.id.startsWith("heat_");
+  });
+
+  const droppedThreads = new Set(
+    target.threads.filter((thread) => bot(thread.a) || bot(thread.b)).map((thread) => thread.id),
+  );
+  target.threads = target.threads.filter((thread) => !droppedThreads.has(thread.id));
+  for (const thread of target.threads) {
+    thread.keptBy = thread.keptBy.filter((id) => !bot(id));
+    thread.engagedBy = thread.engagedBy.filter((id) => !bot(id));
+  }
+  target.messages = target.messages.filter(
+    (message) => !droppedThreads.has(message.threadId) && !bot(message.senderId),
+  );
+  target.friends = target.friends.filter((friend) => !bot(friend.ownerId) && !bot(friend.friendId));
+  target.blocks = target.blocks.filter((block) => !bot(block.ownerId) && !bot(block.blockedId));
+  target.reports = target.reports.filter((report) => {
+    if (bot(report.reporterId) || bot(report.targetId) || stockRoom(report.targetId)) return false;
+    return !report.targetId.startsWith("seed_") && !report.targetId.startsWith("heat_");
+  });
+  target.notifications = target.notifications.filter(
+    (note) =>
+      !bot(note.userId) &&
+      (!note.peerId || !bot(note.peerId)) &&
+      (!note.threadId || !droppedThreads.has(note.threadId)),
+  );
+  target.taps = target.taps.filter((tap) => !bot(tap.fromId) && !bot(tap.toId));
+  target.exclusions = target.exclusions.filter((row) => !bot(row.ownerId) && !bot(row.peerId));
+  target.batches = target.batches
+    .filter((batch) => !bot(batch.userId))
+    .map((batch) => ({ ...batch, peerIds: batch.peerIds.filter((id) => !bot(id)) }));
+  target.tapDays = target.tapDays.filter((day) => !bot(day.userId));
 }
 
 function validNews(news: NewsLink | undefined): news is NewsLink {
@@ -343,10 +411,6 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
   let announcement = "";
   let presence = { threadId: null as string | null };
   let pendingOtp: string | null = null;
-  const pendingReply = new Set<string>();
-  let roomCursor = 0;
-  const mutedUntil = new Map<string, number>();
-  let lastIncomingAt = 0;
   let cancelLive: (() => void) | null = null;
   const listeners = new Set<() => void>();
   expirePending();
@@ -356,11 +420,11 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
 
   function load(): State {
     const raw = storage.getItem(STORAGE_KEY);
-    if (!raw) return seedState();
+    if (!raw) return emptyState();
     try {
       const parsed = JSON.parse(raw) as Persisted;
       if (parsed.version !== 2 || !Array.isArray(parsed.accounts) || !Array.isArray(parsed.rooms)) {
-        return seedState();
+        return emptyState();
       }
       const next: State = {
         accounts: parsed.accounts,
@@ -401,73 +465,15 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
         }
         shift(next, delta);
       }
+      stripRetiredStock(next);
+      if (next.sessionUserId && !next.accounts.some((account) => account.userId === next.sessionUserId)) {
+        next.sessionUserId = null;
+      }
       omitUnsolicited(next);
       return next;
     } catch {
-      return seedState();
+      return emptyState();
     }
-  }
-
-  function seedState(): State {
-    const clock = now();
-    const aliasToId = new Map(MOCK_USERS.map((user) => [user.alias, user.id]));
-    const roomIds = new Set(SEED_ROOMS.map((room) => room.id));
-    const chatters: Chatter[] = SEED_CHATTERS.flatMap((item) => {
-      const authorId = aliasToId.get(item.alias);
-      if (!authorId || !roomIds.has(item.roomId)) return [];
-      const chatter: Chatter = {
-        id: `seed_${item.roomId}_${item.minutesAgo}_${authorId}`,
-        authorId,
-        roomId: item.roomId,
-        body: item.body,
-        createdAt: clock - item.minutesAgo * 60_000,
-      };
-      if (item.newsIndex != null && NEWS_ITEMS[item.newsIndex]) chatter.news = NEWS_ITEMS[item.newsIndex];
-      return [chatter];
-    });
-    for (const fill of HEAT_FILL) {
-      if (!roomIds.has(fill.roomId)) continue;
-      fill.bodies.forEach((body, index) => {
-        const author = MOCK_USERS[index % MOCK_USERS.length];
-        if (!author) return;
-        chatters.push({
-          id: `heat_${fill.roomId}_${index}`,
-          authorId: author.id,
-          roomId: fill.roomId,
-          body,
-          createdAt: clock - (3 + index) * 60_000,
-        });
-      });
-    }
-    return {
-      accounts: MOCK_USERS.map((user) => ({
-        userId: user.id,
-        contact: null,
-        seated: true,
-        profile: {
-          ...user,
-          joinedAt: clock - 1000 * 60 * 60 * 24 * 40,
-          ...(DEMO_AVATARS[user.id] ? { avatar: DEMO_AVATARS[user.id] } : {}),
-        },
-      })),
-      sessionUserId: null,
-      rooms: SEED_ROOMS.map((room) => ({
-        ...room,
-        createdAt: clock - 1000 * 60 * 60 * 24 * 12,
-      })),
-      memberships: [],
-      chatters,
-      threads: [],
-      messages: [],
-      friends: [],
-      blocks: [],
-      reports: [],
-      notifications: [],
-      taps: [],
-      exclusions: [],
-      batches: [],
-      tapDays: [],
-    };
   }
 
   function shift(target: State, delta: number) {
@@ -525,10 +531,6 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
 
   function isBlocked(ownerId: string, otherId: string) {
     return state.blocks.some((block) => block.ownerId === ownerId && block.blockedId === otherId);
-  }
-
-  function isMuted(peerId: string) {
-    return (mutedUntil.get(peerId) ?? 0) > now();
   }
 
   function isFriend(ownerId: string, otherId: string) {
@@ -919,59 +921,17 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     }
   }
 
-  function pickAuthor(): PublicUser | null {
-    const blocked = blockedSet();
-    const pool = profiles().filter(
-      (user) => user.id.startsWith("usr_") && user.id !== state.sessionUserId && !blocked.has(user.id),
-    );
-    if (!pool.length) return null;
-    return pool[Math.floor(random() * pool.length)] ?? null;
-  }
-
-  function pushChatter(author: PublicUser, body: string, roomId: string, news?: NewsLink) {
-    state.chatters.push({
-      id: uid("cht"),
-      authorId: author.id,
-      roomId,
-      body,
-      news,
-      createdAt: now(),
-    });
-    trimChannel(roomId);
-    const room = roomById(roomId);
-    if (me()) announcement = `${author.alias} in ${room?.name ?? "a room"}`;
-  }
-
-  function queueReply(threadId: string, peerId: string, prompt: string) {
-    if (!peerId.startsWith("usr_") || pendingReply.has(threadId) || isMuted(peerId)) return;
-    pendingReply.add(threadId);
-    const delay = 1400 + Math.floor(random() * 2200);
-    schedule(() => {
-      pendingReply.delete(threadId);
-      const thread = state.threads.find((item) => item.id === threadId);
-      const sessionId = state.sessionUserId;
-      if (!thread || !sessionId || isBlocked(sessionId, peerId)) return;
-      const bank = prompt.includes("?") ? QUESTION_REPLIES : REPLIES;
-      const body = bank[Math.floor(random() * bank.length)] ?? REPLIES[0]!;
-      addDirect({ thread, senderId: peerId, body, kind: "text", notify: true, flash: true });
-      emit();
-    }, delay);
-  }
-
-  function openMatchThread(tap: TapRec, flash: boolean): { threadId: string; greeted: boolean } {
+  function openMatchThread(tap: TapRec): string {
     const existing = findThread(tap.fromId, tap.toId);
     if (existing) {
       tap.threadId = existing.id;
       engage(existing, tap.toId);
-      return { threadId: existing.id, greeted: false };
+      return existing.id;
     }
     const thread = ensureThread(tap.fromId, tap.toId, "match");
     engage(thread, tap.toId);
-    const senderId = tap.fromId.startsWith("usr_") ? tap.fromId : tap.toId;
-    const body = MATCH_GREETINGS[Math.floor(random() * MATCH_GREETINGS.length)] ?? MATCH_GREETINGS[0]!;
-    addDirect({ thread, senderId, body, kind: "text", notify: true, flash });
     tap.threadId = thread.id;
-    return { threadId: thread.id, greeted: true };
+    return thread.id;
   }
 
   function expirePending(): boolean {
@@ -1018,104 +978,11 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
     const peerId = thread.a === profile.id ? thread.b : thread.a;
     if (thread.origin === "match") finishMatchPair(profile.id, peerId);
     dropThread(threadId);
-    mutedUntil.set(peerId, now() + 3 * 60_000);
     return { ok: true };
-  }
-
-  function seat(userId: string) {
-    for (const friendId of SEEDED_FRIENDS) {
-      if (profileById(friendId)) state.friends.push({ ownerId: userId, friendId });
-    }
-    for (const roomId of SEEDED_ROOMS) {
-      if (roomById(roomId)) state.memberships.push({ userId, roomId, joinedAt: now() });
-    }
-    const incoming = profileById(SEEDED_INCOMING);
-    if (incoming && !hasOpenTap(userId, incoming.id)) {
-      state.taps.push({
-        id: uid("tap"),
-        fromId: incoming.id,
-        toId: userId,
-        status: "pending",
-        createdAt: now() - 60_000,
-      });
-      pushNote({
-        userId,
-        title: `${incoming.alias} tapped you`,
-        body: incoming.bioQuote,
-        peerId: incoming.id,
-        flash: false,
-        match: true,
-      });
-    }
-  }
-
-  function maybeBlast() {
-    const profile = me();
-    if (!profile) return;
-    const candidates = state.threads.filter((thread) => {
-      if (thread.a !== profile.id && thread.b !== profile.id) return false;
-      const peerId = thread.a === profile.id ? thread.b : thread.a;
-      if (!peerId.startsWith("usr_") || !isFriend(profile.id, peerId)) return false;
-      if (isBlocked(profile.id, peerId) || isMuted(peerId)) return false;
-      return thread.origin === "match" || thread.keptBy.includes(profile.id) || thread.engagedBy.includes(profile.id);
-    });
-    if (!candidates.length) return;
-    const thread = candidates[Math.floor(random() * candidates.length)]!;
-    const peerId = thread.a === profile.id ? thread.b : thread.a;
-    const news = NEWS_ITEMS[Math.floor(random() * NEWS_ITEMS.length)];
-    const body = BLAST_LINES[Math.floor(random() * BLAST_LINES.length)] ?? BLAST_LINES[0]!;
-    addDirect({ thread, senderId: peerId, body, kind: "blast", news, notify: true, flash: false });
-  }
-
-  function maybeIncoming() {
-    const profile = me();
-    if (!profile) return;
-    if (now() - lastIncomingAt < 45_000) return;
-    const pending = state.taps.filter((tap) => tap.toId === profile.id && tap.status === "pending");
-    if (pending.length >= 2) return;
-    const pool = eligibleIds(profile.id);
-    if (!pool.length) return;
-    const peerId = pool[Math.floor(random() * pool.length)];
-    if (!peerId) return;
-    const peer = profileById(peerId);
-    if (!peer) return;
-    lastIncomingAt = now();
-    state.taps.push({
-      id: uid("tap"),
-      fromId: peerId,
-      toId: profile.id,
-      status: "pending",
-      createdAt: now(),
-    });
-    removeFromBatch(profile.id, peerId);
-    pushNote({
-      userId: profile.id,
-      title: `${peer.alias} tapped you`,
-      body: peer.bioQuote,
-      peerId,
-      flash: true,
-      match: true,
-    });
   }
 
   function runLive() {
     expirePending();
-    const roll = random();
-    if (roll < 0.62) {
-      const take = LIVE_ROOMS[roomCursor % LIVE_ROOMS.length];
-      roomCursor += 1;
-      if (!take) return;
-      if (!roomById(take.roomId)) return;
-      const author = pickAuthor();
-      if (!author) return;
-      pushChatter(author, take.body, take.roomId, take.newsIndex != null ? NEWS_ITEMS[take.newsIndex] : undefined);
-      return;
-    }
-    if (roll < 0.84) {
-      maybeBlast();
-      return;
-    }
-    maybeIncoming();
   }
 
   function cleanRoomName(name: string) {
@@ -1259,6 +1126,12 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
         const remaining = Math.max(0, TAP_LIMIT - usedToday(profileId));
         if (remaining !== snapshot.tapsRemaining) refresh = true;
       }
+      if (
+        !refresh &&
+        snapshot.threads.some((thread) => !thread.permanent && now() - thread.updatedAt > MESSAGE_TTL_MS)
+      ) {
+        refresh = true;
+      }
       if (refresh) {
         snapshot = derive();
         if (expired || purged) persist();
@@ -1295,7 +1168,6 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
         joinedAt: now(),
       };
       if (!account.seated) {
-        seat(account.userId);
         account.seated = true;
         drawBatch(account.userId, new Set());
       }
@@ -1466,7 +1338,6 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
         flash: false,
         moderation,
       });
-      queueReply(thread.id, peerId, composed.body);
       emit();
       return {
         ok: true,
@@ -1720,11 +1591,10 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       const tap = state.taps.find((item) => item.id === tapId && item.toId === profile.id && item.status === "pending");
       if (!tap) return { ok: false, error: "That tap is no longer waiting." };
       if (isBlocked(profile.id, tap.fromId)) return { ok: false, error: "Unblock this alias first." };
-      const opened = openMatchThread(tap, false);
+      const threadId = openMatchThread(tap);
       tap.status = "accepted";
       tap.resolvedAt = now();
-      tap.threadId = opened.threadId;
-      const threadId = opened.threadId;
+      tap.threadId = threadId;
       removeFromBatch(profile.id, tap.fromId);
       emit();
       return { ok: true, threadId };
@@ -1742,12 +1612,11 @@ export function createLocalBackend(options: LocalOptions = {}): LocalBackend {
       return { ok: true };
     },
     resetFloor() {
-      state = seedState();
+      state = emptyState();
       flashes = [];
       announcement = "";
       pendingOtp = null;
       presence = { threadId: null };
-      lastIncomingAt = 0;
       emit();
     },
     startLive() {
